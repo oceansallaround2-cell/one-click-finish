@@ -1,1 +1,20 @@
+{
+  "name": "OUR CITY – A World for Two",
+  "short_name": "Our City",
+  "description": "An open tropical island city at sunset built for two.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d111d",
+  "theme_color": "#0d111d",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
 
