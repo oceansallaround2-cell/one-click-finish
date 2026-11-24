@@ -14,16 +14,30 @@ export type AvatarPalette = {
   shoe: string;
   eye: string;
 };
-
+const DEFAULT_AVATAR_PALETTE: AvatarPalette = {
+  skin: "#e8b99b",
+  hair: "#38251f",
+  jacket: "#334b68",
+  dress: "#d987a8",
+  shirt: "#f5eee5",
+  jewelry: "#e8c46a",
+  shoe: "#292b35",
+  eye: "#49332c",
+};
 export function PlayerAvatar({
-  look,
-  palette,
-  motion,
+  look: requestedLook,
+  character,
+  palette: suppliedPalette,
+  motion: suppliedMotion,
 }: {
-  look: PlayerLook;
-  palette: AvatarPalette;
-  motion: { current: number };
+  look?: PlayerLook;
+  character?: PlayerLook;
+  palette?: AvatarPalette;
+  motion?: { current: number };
 }) {
+  const look = requestedLook ?? character ?? "mira";
+  const palette = suppliedPalette ?? DEFAULT_AVATAR_PALETTE;
+  const motion = suppliedMotion ?? { current: 0 };
   const leftLeg = useRef<Group>(null);
   const rightLeg = useRef<Group>(null);
   const leftArm = useRef<Group>(null);
