@@ -1,290 +1,300 @@
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Button } from "@/components/ui/button";
-import { CityWorld, type CityPalette } from "@/game/scene/CityWorld";
-import { PlayerAvatar, type AvatarPalette, type PlayerLook } from "@/game/scene/PlayerAvatar";
-import { cameraRelativeDirection, moveFromJoystick, moveFromKeyboard, type MoveInput } from "@/game/sim/movement";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
 import {
-  ArrowUpRight,
-  Check,
-  ChevronUp,
+  Compass,
   Heart,
-  Map as MapIcon,
   MapPin,
-  Navigation,
-  RotateCcw,
+  Maximize2,
+  Menu,
   Sparkles,
+  Volume2,
+  VolumeX,
   Wifi,
   WifiOff,
   X,
-  Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Group, Vector3 } from "three";
+import { Button } from "@/components/ui/button";
+import { CityWorld } from "./scene/CityWorld";
+import { PlayerAvatar } from "./scene/PlayerAvatar";
+import {
+  clampJoystickInput,
+  computeMovementStep,
+  type MovementInput,
+  type MovementVector,
+} from "./sim/movement";
 
-type GamePalette = CityPalette & AvatarPalette & { sun: string };
-type GameCamera = { yaw: number; pitch: number };
-type HudSnapshot = { x: number; z: number; distance: number; canInteract: boolean };
-
-interface SoloSaveData {
-  look: PlayerLook;
-  completed: boolean;
-  position: { x: number; z: number };
-  savedAt: number;
-}
+export type CharacterId = "mira" | "leo";
 
 const STORAGE_KEY = "our_city_solo_save_v1";
-const GOAL = { x: 0, z: -73 };
+
+interface SoloSaveData {
+  version: 1;
+  character: CharacterId;
+  position: [number, number, number];
+  rotationY: number;
+  visitedHotspots: string[];
+  lastSavedAt: number;
+}
 
 function loadSoloSave(): SoloSaveData | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as SoloSaveData;
-  } catch {
-    return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.version === 1) return parsed as SoloSaveData;
+  } catch (err) {
+    console.warn("Failed to read solo save:", err);
   }
+  return null;
 }
 
 function saveSoloProgress(data: Partial<SoloSaveData>) {
   if (typeof window === "undefined") return;
   try {
-    const existing = loadSoloSave() || {
-      look: "mira" as PlayerLook,
-      completed: false,
-      position: { x: 0, z: 12 },
-      savedAt: Date.now(),
+    const current = loadSoloSave() || {
+      version: 1,
+      character: "mira",
+      position: [0, 0, 14],
+      rotationY: 0,
+      visitedHotspots: [],
+      lastSavedAt: Date.now(),
     };
     const updated: SoloSaveData = {
-      ...existing,
+      ...current,
       ...data,
-      savedAt: Date.now(),
+      lastSavedAt: Date.now(),
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  } catch {
-    // Storage might be full or restricted
+  } catch (err) {
+    console.warn("Failed to write solo save:", err);
   }
 }
 
-function cssSwatch(name: string): string {
-  if (typeof document === "undefined") return "#ffffff";
-  const canvas = document.createElement("canvas");
-  canvas.width = 1;
-  canvas.height = 1;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return getComputedStyle(document.documentElement).color || "#ffffff";
-  context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#ffffff";
-  context.fillRect(0, 0, 1, 1);
-  const pixel = context.getImageData(0, 0, 1, 1).data;
-  return `#${[pixel[0], pixel[1], pixel[2]].map((part) => (part ?? 0).toString(16).padStart(2, "0")).join("")}`;
-}
+// Interactive Discoverable Locations in Phase 1
+const DISCOVERY_HOTSPOTS = [
+  { id: "cafe", name: "Sunset Seaside Café", pos: [22, 10], radius: 6, desc: "Oceanfront deck with fresh mocktails and lofi chill beats." },
+  { id: "beach", name: "Golden Palms Boardwalk", pos: [0, 24], radius: 8, desc: "Soft coral sands, lounge chairs, and warm sunset breeze." },
+  { id: "plaza", name: "Central Clocktower Fountain", pos: [0, 0], radius: 7, desc: "The vibrant heart of the city with neon palm reflections." },
+  { id: "rooftop", name: "Skyline Helipad Vista", pos: [-24, -20], radius: 8, desc: "Panoramic view over the entire island archipelago." },
+  { id: "lookout", name: "South Jetty Pier", pos: [0, 48], radius: 6, desc: "Watch the sun dip below the infinite ocean horizon." },
+];
 
-function readPalette(): GamePalette {
-  return {
-    sky: cssSwatch("--game-scene-sky") || "#f48c68",
-    ground: cssSwatch("--game-scene-ground") || "#1b2432",
-    road: cssSwatch("--game-scene-road") || "#151b24",
-    roadMark: cssSwatch("--game-scene-road-mark") || "#ffd166",
-    buildingA: cssSwatch("--game-scene-building-a") || "#2e3846",
-    buildingB: cssSwatch("--game-scene-building-b") || "#3f4d5f",
-    buildingC: cssSwatch("--game-scene-building-c") || "#ef476f",
-    window: cssSwatch("--game-scene-window") || "#ffd166",
-    foliage: cssSwatch("--game-scene-foliage") || "#06d6a0",
-    trunk: cssSwatch("--game-scene-trunk") || "#8d5b4c",
-    water: cssSwatch("--game-scene-water") || "#118ab2",
-    shore: cssSwatch("--game-scene-shore") || "#f9d77e",
-    coral: cssSwatch("--game-coral") || "#ff758f",
-    skin: cssSwatch("--game-scene-skin") || "#f4c29f",
-    hair: cssSwatch("--game-scene-hair") || "#2b2d42",
-    jacket: cssSwatch("--game-scene-jacket") || "#ef476f",
-    dress: cssSwatch("--game-scene-dress") || "#ff758f",
-    shirt: cssSwatch("--game-scene-shirt") || "#ffffff",
-    jewelry: cssSwatch("--game-scene-jewelry") || "#ffd166",
-    shoe: cssSwatch("--game-scene-shoe") || "#1b2432",
-    eye: cssSwatch("--game-scene-eye") || "#1b2432",
-    sun: cssSwatch("--game-scene-sun") || "#ffa07a",
-  };
+interface PlayerControllerProps {
+  character: CharacterId;
+  inputRef: React.MutableRefObject<MovementInput>;
+  onPositionUpdate: (pos: [number, number, number], rotY: number, speed: number) => void;
+  onNearHotspot: (hotspotName: string | null) => void;
+  initialPosition?: [number, number, number];
+  initialRotation?: number;
 }
 
 function PlayerController({
-  palette,
-  look,
-  initialPosition,
-  movement,
-  sprinting,
-  jumpPending,
-  cameraRig,
-  missionDone,
-  onHud,
-}: {
-  palette: GamePalette;
-  look: PlayerLook;
-  initialPosition: { x: number; z: number };
-  movement: { current: MoveInput };
-  sprinting: { current: boolean };
-  jumpPending: { current: boolean };
-  cameraRig: { current: GameCamera };
-  missionDone: { current: boolean };
-  onHud: (snapshot: HudSnapshot) => void;
-}) {
-  const player = useRef<Group>(null);
-  const verticalSpeed = useRef(0);
-  const motion = useRef(0);
-  const elapsed = useRef(0);
-  const saveInterval = useRef(0);
-  const cameraTarget = useMemo(() => new Vector3(), []);
-  const desiredCamera = useMemo(() => new Vector3(), []);
-  const direction = useMemo(() => new Vector3(), []);
+  character,
+  inputRef,
+  onPositionUpdate,
+  onNearHotspot,
+  initialPosition = [0, 0, 14],
+  initialRotation = 0,
+}: PlayerControllerProps) {
+  const { camera } = useThree();
+  const avatarGroupRef = useRef<THREE.Group>(null);
 
-  useEffect(() => {
-    if (player.current) {
-      player.current.position.x = initialPosition.x;
-      player.current.position.z = initialPosition.z;
-    }
-  }, [initialPosition]);
+  const playerPos = useRef<[number, number, number]>([...initialPosition]);
+  const playerRotY = useRef<number>(initialRotation);
+  const verticalVelocity = useRef<number>(0);
+  const isGrounded = useRef<boolean>(true);
+  const forwardAngleRef = useRef<number>(0);
+  const saveTimerRef = useRef<number>(0);
 
-  useFrame(({ camera }, frameDelta) => {
-    const delta = Math.min(frameDelta, 0.05);
-    const actor = player.current;
-    if (!actor) return;
+  const camTarget = useRef(new THREE.Vector3(...initialPosition));
+  const camPos = useRef(new THREE.Vector3(initialPosition[0], initialPosition[1] + 4, initialPosition[2] + 9));
 
-    const facing = cameraRig.current;
-    const input = movement.current;
-    const move = cameraRelativeDirection(input, facing.yaw);
-    const active = Math.hypot(input.x, input.y) > 0.05;
-    const pace = sprinting.current ? 7.3 : 4.25;
-    motion.current = active ? (sprinting.current ? 1.35 : 0.9) : 0;
+  useFrame((_, delta) => {
+    const dt = Math.min(delta, 0.08);
+    const input = inputRef.current;
 
-    if (active) {
-      direction.set(move.x, 0, move.z);
-      actor.position.x = Math.max(-105, Math.min(105, actor.position.x + direction.x * pace * delta));
-      actor.position.z = Math.max(-108, Math.min(108, actor.position.z + direction.z * pace * delta));
-      const targetRotation = Math.atan2(direction.x, direction.z);
-      const angleDelta = Math.atan2(Math.sin(targetRotation - actor.rotation.y), Math.cos(targetRotation - actor.rotation.y));
-      actor.rotation.y += angleDelta * (1 - Math.exp(-12 * delta));
-    }
+    const lookDir = new THREE.Vector3();
+    camera.getWorldDirection(lookDir);
+    forwardAngleRef.current = Math.atan2(lookDir.x, lookDir.z);
 
-    if (jumpPending.current) {
-      if (actor.position.y <= 0.02) verticalSpeed.current = 6.4;
-      jumpPending.current = false;
-    }
-    verticalSpeed.current -= 17 * delta;
-    actor.position.y = Math.max(0, actor.position.y + verticalSpeed.current * delta);
-    if (actor.position.y === 0) verticalSpeed.current = 0;
-
-    cameraTarget.set(actor.position.x, actor.position.y + 1.02, actor.position.z);
-    const radius = 8.8;
-    desiredCamera.set(
-      cameraTarget.x + Math.sin(facing.yaw) * radius,
-      cameraTarget.y + 3.7 + facing.pitch * 4.4,
-      cameraTarget.z + Math.cos(facing.yaw) * radius,
+    const step = computeMovementStep(
+      playerPos.current,
+      input,
+      forwardAngleRef.current,
+      dt,
     );
-    camera.position.lerp(desiredCamera, 1 - Math.exp(-5.5 * delta));
-    camera.lookAt(cameraTarget);
 
-    elapsed.current += delta;
-    if (elapsed.current > 0.18) {
-      elapsed.current = 0;
-      const distance = Math.hypot(actor.position.x - GOAL.x, actor.position.z - GOAL.z);
-      onHud({
-        x: actor.position.x,
-        z: actor.position.z,
-        distance,
-        canInteract: distance < 4.5 && !missionDone.current,
-      });
+    // Gravity & Ground Height Logic (Base ground is Y=0.0)
+    const baseGroundY = 0.0;
+    if (input.jump && isGrounded.current) {
+      verticalVelocity.current = 7.5;
+      isGrounded.current = false;
     }
 
-    // Auto-save player coordinates to local storage every ~3 seconds
-    saveInterval.current += delta;
-    if (saveInterval.current > 3.0) {
-      saveInterval.current = 0;
-      saveSoloProgress({ position: { x: actor.position.x, z: actor.position.z } });
+    if (!isGrounded.current) {
+      verticalVelocity.current -= 19.6 * dt;
+      playerPos.current[1] += verticalVelocity.current * dt;
+      if (playerPos.current[1] <= baseGroundY) {
+        playerPos.current[1] = baseGroundY;
+        verticalVelocity.current = 0;
+        isGrounded.current = true;
+      }
+    } else {
+      playerPos.current[1] = baseGroundY;
+    }
+
+    // Island Boundaries: keep player on island (approx +/- 62 units)
+    playerPos.current[0] = Math.max(-62, Math.min(62, step.nextPosition[0]));
+    playerPos.current[2] = Math.max(-62, Math.min(62, step.nextPosition[2]));
+
+    if (step.facingAngle !== null) {
+      let diff = step.facingAngle - playerRotY.current;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      playerRotY.current += diff * Math.min(1, dt * 14);
+    }
+
+    if (avatarGroupRef.current) {
+      avatarGroupRef.current.position.set(
+        playerPos.current[0],
+        playerPos.current[1],
+        playerPos.current[2],
+      );
+      avatarGroupRef.current.rotation.y = playerRotY.current;
+    }
+
+    // Third-person Camera Follow
+    const targetX = playerPos.current[0];
+    const targetY = playerPos.current[1] + 1.45;
+    const targetZ = playerPos.current[2];
+
+    camTarget.current.x = THREE.MathUtils.lerp(camTarget.current.x, targetX, dt * 10);
+    camTarget.current.y = THREE.MathUtils.lerp(camTarget.current.y, targetY, dt * 8);
+    camTarget.current.z = THREE.MathUtils.lerp(camTarget.current.z, targetZ, dt * 10);
+
+    const camDistance = 7.2;
+    const camHeight = 3.6;
+    const idealCamX = targetX - Math.sin(forwardAngleRef.current) * camDistance;
+    const idealCamZ = targetZ - Math.cos(forwardAngleRef.current) * camDistance;
+    const idealCamY = targetY + camHeight;
+
+    camPos.current.x = THREE.MathUtils.lerp(camPos.current.x, idealCamX, dt * 7);
+    camPos.current.y = THREE.MathUtils.lerp(camPos.current.y, idealCamY, dt * 7);
+    camPos.current.z = THREE.MathUtils.lerp(camPos.current.z, idealCamZ, dt * 7);
+
+    camera.position.copy(camPos.current);
+    camera.lookAt(camTarget.current);
+
+    onPositionUpdate(playerPos.current, playerRotY.current, step.currentSpeed);
+
+    // Proximity check to hotspots
+    let foundHotspot: string | null = null;
+    for (const spot of DISCOVERY_HOTSPOTS) {
+      const dx = playerPos.current[0] - spot.pos[0];
+      const dz = playerPos.current[2] - spot.pos[1];
+      if (Math.hypot(dx, dz) <= spot.radius) {
+        foundHotspot = spot.name;
+        break;
+      }
+    }
+    onNearHotspot(foundHotspot);
+
+    // Periodic Solo Auto-save (every ~3.5s)
+    saveTimerRef.current += dt;
+    if (saveTimerRef.current >= 3.5) {
+      saveTimerRef.current = 0;
+      saveSoloProgress({
+        character,
+        position: playerPos.current,
+        rotationY: playerRotY.current,
+      });
     }
   });
 
   return (
-    <group ref={player} position={[initialPosition.x, 0, initialPosition.z]}>
-      <PlayerAvatar look={look} palette={palette} motion={motion} />
+    <group ref={avatarGroupRef}>
+      <PlayerAvatar character={character} />
     </group>
   );
 }
 
-function PointerLook({
-  cameraRig,
-  children,
-}: {
-  cameraRig: { current: GameCamera };
-  children: React.ReactNode;
-}) {
-  const pointerId = useRef<number | null>(null);
-  const lastPoint = useRef({ x: 0, y: 0 });
+// Free orbit drag-to-look around character
+function PointerLookController({ isEnabled }: { isEnabled: boolean }) {
+  const { camera } = useThree();
+  const draggingRef = useRef(false);
+  const lastXRef = useRef(0);
+  const yawRef = useRef(0);
 
-  return (
-    <div
-      className="game-look-layer"
-      aria-hidden="true"
-      onPointerDown={(event) => {
-        pointerId.current = event.pointerId;
-        lastPoint.current = { x: event.clientX, y: event.clientY };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        if (pointerId.current !== event.pointerId) return;
-        const deltaX = event.clientX - lastPoint.current.x;
-        const deltaY = event.clientY - lastPoint.current.y;
-        lastPoint.current = { x: event.clientX, y: event.clientY };
-        cameraRig.current.yaw -= deltaX * 0.006;
-        cameraRig.current.pitch = Math.max(-0.18, Math.min(0.65, cameraRig.current.pitch + deltaY * 0.003));
-      }}
-      onPointerUp={(event) => {
-        pointerId.current = null;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }}
-      onPointerCancel={() => {
-        pointerId.current = null;
-      }}
-    >
-      {children}
-    </div>
-  );
+  useEffect(() => {
+    if (!isEnabled) return;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      // Ignore if clicking UI buttons or joystick
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("button") || target?.closest(".game-joystick") || target?.closest(".game-overlay")) {
+        return;
+      }
+      draggingRef.current = true;
+      lastXRef.current = e.clientX;
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return;
+      const dx = e.clientX - lastXRef.current;
+      lastXRef.current = e.clientX;
+      yawRef.current -= dx * 0.0055;
+      camera.rotation.y = yawRef.current;
+    };
+
+    const handlePointerUp = () => {
+      draggingRef.current = false;
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [camera, isEnabled]);
+
+  return null;
 }
-
 export function GameView() {
-  const palette = useMemo(() => readPalette(), []);
-  const movement = useRef<MoveInput>({ x: 0, y: 0 });
-  const keys = useRef(new Set<string>());
-  const sprinting = useRef(false);
-  const jumpPending = useRef(false);
-  const cameraRig = useRef<GameCamera>({ yaw: 0, pitch: 0.16 });
-  const missionDone = useRef(false);
+  const savedData = useMemo(() => loadSoloSave(), []);
 
-  // Restore saved offline progress
-  const [initialData] = useState(() => loadSoloSave());
-  const initialPos = initialData?.position || { x: 0, z: 12 };
+  const [activeChar, setActiveChar] = useState<CharacterId>(savedData?.character || "mira");
+  const [mapOpen, setMapOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [nearbyHotspot, setNearbyHotspot] = useState<string | null>(null);
+  const [playerCoords, setPlayerCoords] = useState<[number, number, number]>(
+    savedData?.position || [0, 0, 14],
+  );
+  const [playerSpeed, setPlayerSpeed] = useState<number>(0);
 
-  const hudRef = useRef<HudSnapshot>({
-    x: initialPos.x,
-    z: initialPos.z,
-    distance: Math.hypot(initialPos.x - GOAL.x, initialPos.z - GOAL.z),
-    canInteract: false,
+  // Input State Refs
+  const inputRef = useRef<MovementInput>({
+    forward: 0,
+    turn: 0,
+    sprint: false,
+    jump: false,
+    interact: false,
   });
 
-  const [look, setLook] = useState<PlayerLook>(initialData?.look || "mira");
-  const [hud, setHud] = useState(hudRef.current);
-  const [completed, setCompleted] = useState(Boolean(initialData?.completed));
-  const [mapOpen, setMapOpen] = useState(false);
-  const [ready, setReady] = useState(false);
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
-  const [stick, setStick] = useState({ x: 0, y: 0 });
-  const stickPointer = useRef<number | null>(null);
-  const stickElement = useRef<HTMLDivElement>(null);
+  const joystickActive = useRef(false);
+  const joystickStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isSprinting, setIsSprinting] = useState(false);
 
-  // Sync mission done ref
-  useEffect(() => {
-    missionDone.current = completed;
-  }, [completed]);
-
-  // Online / Offline listener
+  // Online / Offline Status Listeners
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -296,490 +306,378 @@ export function GameView() {
     };
   }, []);
 
-  const onHud = useCallback((snapshot: HudSnapshot) => {
-    hudRef.current = snapshot;
-    setHud(snapshot);
+  // Keyboard controls (WASD, Arrows, Space, Shift, E)
+  useEffect(() => {
+    const keysDown = new Set<string>();
+
+    const updateFromKeys = () => {
+      let forward = 0;
+      let turn = 0;
+      if (keysDown.has("KeyW") || keysDown.has("ArrowUp")) forward += 1;
+      if (keysDown.has("KeyS") || keysDown.has("ArrowDown")) forward -= 1;
+      if (keysDown.has("KeyD") || keysDown.has("ArrowRight")) turn += 1;
+      if (keysDown.has("KeyA") || keysDown.has("ArrowLeft")) turn -= 1;
+
+      inputRef.current.forward = forward;
+      inputRef.current.turn = turn;
+      inputRef.current.sprint = keysDown.has("ShiftLeft") || keysDown.has("ShiftRight");
+      inputRef.current.jump = keysDown.has("Space");
+      inputRef.current.interact = keysDown.has("KeyE");
+      setIsSprinting(inputRef.current.sprint);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      keysDown.add(e.code);
+      updateFromKeys();
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysDown.delete(e.code);
+      updateFromKeys();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, []);
 
-  const completeMission = useCallback(() => {
-    if (!hudRef.current.canInteract || missionDone.current) return;
-    missionDone.current = true;
-    setCompleted(true);
-    saveSoloProgress({ completed: true });
-    setHud((current) => ({ ...current, canInteract: false }));
-  }, []);
-
-  const handleLookChange = (nextLook: PlayerLook) => {
-    setLook(nextLook);
-    saveSoloProgress({ look: nextLook });
+  // Onscreen Touch Joystick Handlers
+  const handleJoystickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    joystickActive.current = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    joystickStart.current = { x: e.clientX, y: e.clientY };
   };
 
-  const resetSoloProgress = () => {
+  const handleJoystickPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!joystickActive.current) return;
+    const maxRadius = 44;
+    const dx = e.clientX - joystickStart.current.x;
+    const dy = e.clientY - joystickStart.current.y;
+    const dist = Math.hypot(dx, dy);
+    const clampedDist = Math.min(dist, maxRadius);
+    const angle = Math.atan2(dy, dx);
+
+    const knobX = Math.cos(angle) * clampedDist;
+    const knobY = Math.sin(angle) * clampedDist;
+    setKnobOffset({ x: knobX, y: knobY });
+
+    const normalized = clampJoystickInput({
+      x: knobX / maxRadius,
+      y: -knobY / maxRadius,
+    });
+
+    inputRef.current.turn = normalized.x;
+    inputRef.current.forward = normalized.y;
+  };
+
+  const handleJoystickPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    joystickActive.current = false;
     try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // safe fallback
+    }
+    setKnobOffset({ x: 0, y: 0 });
+    inputRef.current.turn = 0;
+    inputRef.current.forward = 0;
+  };
+
+  const switchCharacter = (char: CharacterId) => {
+    setActiveChar(char);
+    saveSoloProgress({ character: char });
+  };
+
+  const handleResetProgress = () => {
+    if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
       window.location.reload();
-    } catch {
-      // Ignore
     }
   };
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) event.preventDefault();
-      keys.current.add(event.code);
-      movement.current = moveFromKeyboard(keys.current);
-      if (event.code === "ShiftLeft" || event.code === "ShiftRight") sprinting.current = true;
-      if (event.code === "Space" && !event.repeat) jumpPending.current = true;
-      if (event.code === "KeyE" && !event.repeat) completeMission();
-      if (event.code === "KeyM" && !event.repeat) setMapOpen((open) => !open);
-      if (event.code === "Escape") setMapOpen(false);
-    };
-    const onKeyUp = (event: KeyboardEvent) => {
-      keys.current.delete(event.code);
-      movement.current = moveFromKeyboard(keys.current);
-      if (event.code === "ShiftLeft" || event.code === "ShiftRight") sprinting.current = false;
-    };
-    window.addEventListener("keydown", onKeyDown, { passive: false });
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [completeMission]);
-
-  const updateStick = (clientX: number, clientY: number) => {
-    const element = stickElement.current;
-    if (!element) return;
-    const bounds = element.getBoundingClientRect();
-    const rawX = (clientX - (bounds.left + bounds.width / 2)) / (bounds.width * 0.34);
-    const rawY = (bounds.top + bounds.height / 2 - clientY) / (bounds.height * 0.34);
-    const next = moveFromJoystick(rawX, rawY);
-    movement.current = next;
-    setStick(next);
-  };
-
-  const mapPlayerLeft = Math.max(3, Math.min(97, 50 + (hud.x / 220) * 100));
-  const mapPlayerTop = Math.max(3, Math.min(97, 50 + (hud.z / 220) * 100));
-  const mapGoalTop = Math.max(3, Math.min(97, 50 + (GOAL.z / 220) * 100));
-
   return (
-    <main className="our-city" aria-label="Our City playable world">
-      <div className="game-canvas" data-scene-ready={ready ? "true" : undefined}>
-        <Canvas
-          shadows
-          dpr={[1, 1.35]}
-          camera={{ position: [0, 5, 21], fov: 56, near: 0.1, far: 250 }}
-          gl={{ antialias: true, powerPreference: "high-performance" }}
-          onCreated={({ gl }) => {
-            gl.setClearColor(palette.sky);
-            setReady(true);
+    <main className="our-city relative w-full h-[100dvh] overflow-hidden select-none bg-neutral-950 font-sans text-white">
+      {/* 3D WebGL Canvas */}
+      <Canvas
+        className="game-canvas w-full h-full"
+        camera={{ fov: 50, near: 0.1, far: 850, position: [0, 5, 20] }}
+        gl={{
+          antialias: true,
+          powerPreference: "high-performance",
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.05,
+        }}
+      >
+        <PointerLookController isEnabled={!mapOpen} />
+        <CityWorld />
+        <PlayerController
+          character={activeChar}
+          inputRef={inputRef}
+          initialPosition={savedData?.position || [0, 0, 14]}
+          initialRotation={savedData?.rotationY || 0}
+          onPositionUpdate={(pos, _, speed) => {
+            setPlayerCoords(pos);
+            setPlayerSpeed(speed);
           }}
-        >
-          <color attach="background" args={[palette.sky]} />
-          <fog attach="fog" args={[palette.sky, 92, 220]} />
-          <hemisphereLight intensity={1.25} color={palette.sun} groundColor={palette.ground} />
-          <ambientLight intensity={0.66} />
-          <directionalLight
-            position={[-48, 55, 34]}
-            color={palette.sun}
-            intensity={2.45}
-            castShadow
-            shadow-mapSize-width={1024}
-            shadow-mapSize-height={1024}
-            shadow-camera-left={-70}
-            shadow-camera-right={70}
-            shadow-camera-top={70}
-            shadow-camera-bottom={-70}
-          />
-          <CityWorld palette={palette} />
-          <PlayerController
-            palette={palette}
-            look={look}
-            initialPosition={initialPos}
-            movement={movement}
-            sprinting={sprinting}
-            jumpPending={jumpPending}
-            cameraRig={cameraRig}
-            missionDone={missionDone}
-            onHud={onHud}
-          />
-        </Canvas>
-      </div>
+          onNearHotspot={setNearbyHotspot}
+        />
+      </Canvas>
 
-      <PointerLook cameraRig={cameraRig}>
-        <div className="game-look-indicator">
-          <RotateCcw aria-hidden="true" /> <span>LOOK</span>
-        </div>
-      </PointerLook>
-
-      <header className="game-topbar">
-        <div className="game-brand-lockup">
-          <div className="game-brand-mark">
-            <Heart aria-hidden="true" fill="currentColor" />
+      {/* Top HUD Bar */}
+      <header className="game-topbar absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-20">
+        <div className="flex items-center gap-2">
+          <div className="game-brand flex items-center gap-2.5 bg-neutral-900/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs font-bold tracking-wider uppercase text-amber-200">
+              OUR CITY
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-white/50 border-l border-white/10 pl-2">
+              A World for Two
+            </span>
           </div>
-          <div className="game-brand-type">
-            <span>OUR CITY</span>
-            <small>A WORLD FOR TWO</small>
-          </div>
-        </div>
 
-        {/* Solo & Offline/Online Status Badge */}
-        <div className="game-evening-badge">
-          <span className="game-live-dot" />
-          <span>SOLO MODE</span>
-          <i />
-          <small className="flex items-center gap-1">
+          <div className="hidden sm:flex items-center gap-1.5 bg-neutral-900/70 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[11px] text-white/70">
             {isOnline ? (
               <>
-                <Wifi className="w-3 h-3 inline" /> ONLINE
+                <Wifi className="w-3 h-3 text-emerald-400" />
+                <span>Solo (Online)</span>
               </>
             ) : (
               <>
-                <WifiOff className="w-3 h-3 inline" /> OFFLINE READY
+                <WifiOff className="w-3 h-3 text-amber-400" />
+                <span>Solo (Offline Ready)</span>
               </>
             )}
-          </small>
+          </div>
         </div>
 
-        <div className="game-top-actions">
-          <div className="game-character-switch" role="group" aria-label="Choose a character">
-            <Button
+        {/* Character Switcher & Quick Actions */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <div className="bg-neutral-900/80 backdrop-blur-md p-1 rounded-full border border-white/10 flex items-center gap-1 shadow-lg">
+            <button
               type="button"
-              variant="ghost"
-              aria-pressed={look === "mira"}
-              className={`game-character-option${look === "mira" ? " is-selected" : ""}`}
-              onClick={() => handleLookChange("mira")}
+              onClick={() => switchCharacter("mira")}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                activeChar === "mira"
+                  ? "bg-rose-500 text-white shadow-md shadow-rose-500/30"
+                  : "text-white/70 hover:text-white"
+              }`}
             >
               Mira
-            </Button>
-            <Button
+            </button>
+            <button
               type="button"
-              variant="ghost"
-              aria-pressed={look === "leo"}
-              className={`game-character-option${look === "leo" ? " is-selected" : ""}`}
-              onClick={() => handleLookChange("leo")}
+              onClick={() => switchCharacter("leo")}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                activeChar === "leo"
+                  ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
+                  : "text-white/70 hover:text-white"
+              }`}
             >
               Leo
-            </Button>
+            </button>
           </div>
+
           <Button
-            type="button"
-            variant="ghost"
             size="icon"
-            className="game-icon-button"
-            aria-label="Open city map"
-            title="Open city map"
-            onClick={() => setMapOpen(true)}
+            variant="ghost"
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className="w-8 h-8 rounded-full bg-neutral-900/80 backdrop-blur-md border border-white/10 text-white hover:bg-neutral-800"
+            aria-label="Toggle Sound"
           >
-            <MapIcon aria-hidden="true" />
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-300" /> : <VolumeX className="w-4 h-4 text-white/40" />}
+          </Button>
+
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => setMapOpen(true)}
+            className="w-8 h-8 rounded-full bg-neutral-900/80 backdrop-blur-md border border-white/10 text-white hover:bg-neutral-800"
+            aria-label="Open Map"
+          >
+            <Compass className="w-4 h-4 text-amber-300" />
           </Button>
         </div>
       </header>
 
-      <section className="game-minimap" aria-label="Mini-map showing your position and the lookout">
-        <div className="game-minimap-ring" />
-        <div className="game-map-blocks" />
-        <div className="game-map-route" />
-        <div className="game-map-destination" style={{ left: "50%", top: `${mapGoalTop}%` }} />
-        <div className="game-map-player" style={{ left: `${mapPlayerLeft}%`, top: `${mapPlayerTop}%` }} />
-        <span className="game-minimap-north">N</span>
-        <span className="game-minimap-name">SP</span>
-      </section>
+      {/* Minimap (GTA Radar Style at bottom-left) */}
+      <aside className="game-minimap absolute bottom-24 sm:bottom-6 left-3 w-32 h-32 rounded-2xl bg-neutral-950/85 backdrop-blur-md border border-white/15 overflow-hidden shadow-2xl pointer-events-auto z-20">
+        <div className="relative w-full h-full flex items-center justify-center">
+          {/* Radar Grid Rings */}
+          <div className="absolute inset-2 rounded-xl border border-white/10" />
+          <div className="absolute inset-6 rounded-lg border border-dashed border-white/10" />
 
-      <section className={`game-mission${completed ? " is-complete" : ""}`} aria-live="polite">
-        <div className="game-mission-heading">
-          <span className="game-mission-index">01</span>
-          <span className="game-mission-kicker">SOLO EXPEDITION</span>
-          {completed ? (
-            <Check className="game-mission-complete" aria-label="Complete" />
-          ) : (
-            <Sparkles className="game-mission-spark" aria-hidden="true" />
-          )}
+          {/* Compass labels */}
+          <span className="absolute top-1 text-[8px] font-bold text-amber-300">N</span>
+          <span className="absolute bottom-1 text-[8px] font-bold text-white/40">S</span>
+          <span className="absolute left-1 text-[8px] font-bold text-white/40">W</span>
+          <span className="absolute right-1 text-[8px] font-bold text-white/40">E</span>
+
+          {/* Hotspot blips on minimap */}
+          {DISCOVERY_HOTSPOTS.map((spot) => {
+            const relX = ((spot.pos[0] - playerCoords[0]) / 70) * 45;
+            const relY = ((spot.pos[1] - playerCoords[2]) / 70) * 45;
+            const clampedX = Math.max(-50, Math.min(50, relX));
+            const clampedY = Math.max(-50, Math.min(50, relY));
+            return (
+              <div
+                key={spot.id}
+                title={spot.name}
+                style={{
+                  transform: `translate(${clampedX}px, ${clampedY}px)`,
+                }}
+                className="absolute w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-400/40"
+              />
+            );
+          })}
+
+          {/* Center Player Pointer */}
+          <div className="relative z-10 flex flex-col items-center">
+            <div
+              className={`w-3 h-3 rounded-full border-2 border-white shadow-md ${
+                activeChar === "mira" ? "bg-rose-500" : "bg-sky-500"
+              }`}
+            />
+          </div>
+
+          {/* Speedometer readout */}
+          <div className="absolute bottom-1 right-2 text-[9px] font-mono text-white/60">
+            {Math.round(playerSpeed * 2.2)} km/h
+          </div>
         </div>
-        <h1>{completed ? "Lookout reached & saved." : "Meet me at the lookout."}</h1>
-        <p>
-          {completed
-            ? "Your progress is saved locally. Explore freely!"
-            : hud.canInteract
-            ? "A little closer now."
-            : "Follow the lights above the water."}
-        </p>
-        {!completed && hud.canInteract && (
-          <Button type="button" variant="default" className="game-arrive-button" onClick={completeMission}>
-            Arrive together <ArrowUpRight aria-hidden="true" />
-          </Button>
-        )}
-      </section>
+      </aside>
 
-      <div className="game-mobile-controls" aria-label="Touch controls">
-        <div
-          ref={stickElement}
-          className={`game-joystick${stickPointer.current !== null ? " is-active" : ""}`}
-          role="application"
-          aria-label="Movement joystick"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            stickPointer.current = event.pointerId;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            updateStick(event.clientX, event.clientY);
-          }}
-          onPointerMove={(event) => {
-            if (stickPointer.current === event.pointerId) updateStick(event.clientX, event.clientY);
-          }}
-          onPointerUp={(event) => {
-            if (stickPointer.current !== event.pointerId) return;
-            stickPointer.current = null;
-            movement.current = { x: 0, y: 0 };
-            setStick({ x: 0, y: 0 });
-            event.currentTarget.releasePointerCapture(event.pointerId);
-          }}
-          onPointerCancel={() => {
-            stickPointer.current = null;
-            movement.current = { x: 0, y: 0 };
-            setStick({ x: 0, y: 0 });
-          }}
-        >
-          <span className="game-joystick-center">
-            <span style={{ left: `${50 + stick.x * 27}%`, top: `${50 - stick.y * 27}%` }} />
-          </span>
-          <span className="game-joystick-arrow">
-            <ChevronUp aria-hidden="true" />
+      {/* Proximity Interaction Prompt Banner */}
+      {nearbyHotspot && (
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 bg-neutral-900/90 backdrop-blur-md px-4 py-2 rounded-full border border-amber-400/30 shadow-xl flex items-center gap-2 pointer-events-none z-20 animate-bounce">
+          <Sparkles className="w-4 h-4 text-amber-300" />
+          <span className="text-xs font-semibold text-amber-200">
+            Near {nearbyHotspot}
           </span>
         </div>
-        <div className="game-action-controls">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={`game-action-button game-sprint-button${sprinting.current ? " is-pressed" : ""}`}
-            
-
-            aria-label="Sprint"
-
-            title="Sprint"
-
-            onPointerDown={(event) => {
-
-              event.preventDefault();
-
-              sprinting.current = true;
-
-            }}
-
-            onPointerUp={() => {
-
-              sprinting.current = false;
-
-            }}
-
-            onPointerLeave={() => {
-
-              sprinting.current = false;
-
-            }}
-
-            onPointerCancel={() => {
-
-              sprinting.current = false;
-
-            }}
-
-          >
-
-            <Zap aria-hidden="true" />
-
-          </Button>
-
-          <Button
-
-            type="button"
-
-            variant="ghost"
-
-            size="icon"
-
-            className="game-action-button game-jump-button"
-
-            aria-label="Jump"
-
-            title="Jump"
-
-            onClick={() => {
-
-              jumpPending.current = true;
-
-            }}
-
-          >
-
-            <ChevronUp aria-hidden="true" />
-
-          </Button>
-
-          {hud.canInteract && (
-
-            <Button
-
-              type="button"
-
-              variant="default"
-
-              size="icon"
-
-              className="game-action-button game-interact-button"
-
-              aria-label="Arrive together"
-
-              title="Arrive together"
-
-              onClick={completeMission}
-
-            >
-
-              <Heart aria-hidden="true" />
-
-            </Button>
-
-          )}
-
-        </div>
-
-      </div>
-
-
-
-      {mapOpen && (
-
-        <div
-
-          className="game-map-overlay"
-
-          role="presentation"
-
-          onMouseDown={(event) => {
-
-            if (event.target === event.currentTarget) setMapOpen(false);
-
-          }}
-
-        >
-
-          <section className="game-map-panel" role="dialog" aria-modal="true" aria-labelledby="game-map-title">
-
-            <div className="game-map-panel-heading">
-
-              <div>
-
-                <span className="game-map-eyebrow">CITY GUIDE · SOUTHPOINT</span>
-
-                <h2 id="game-map-title">The waterfront</h2>
-
-              </div>
-
-              <Button
-
-                type="button"
-
-                variant="ghost"
-
-                size="icon"
-
-                className="game-icon-button"
-
-                aria-label="Close map"
-
-                onClick={() => setMapOpen(false)}
-
-              >
-
-                <X aria-hidden="true" />
-
-              </Button>
-
-            </div>
-
-            <div className="game-large-map">
-
-              <div className="game-large-map-grid" />
-
-              <div className="game-large-map-road game-large-map-road-a" />
-
-              <div className="game-large-map-road game-large-map-road-b" />
-
-              <div className="game-large-map-road game-large-map-road-c" />
-
-              <div className="game-large-map-water" />
-
-              <div className="game-large-map-route" />
-
-              <div className="game-large-map-pin game-large-map-pin-start">
-
-                <Navigation aria-hidden="true" />
-
-              </div>
-
-              <div className="game-large-map-pin game-large-map-pin-goal">
-
-                <MapPin aria-hidden="true" />
-
-              </div>
-
-              <span className="game-large-map-label label-district">SOUTHPOINT</span>
-
-              <span className="game-large-map-label label-marina">THE MARINA</span>
-
-              <span className="game-large-map-label label-lookout">SUNSET LOOKOUT</span>
-
-            </div>
-
-            <div className="game-map-legend">
-
-              <span>
-
-                <i className="legend-player" /> YOU
-
-              </span>
-
-              <span>
-
-                <i className="legend-destination" /> TONIGHT’S PLAN
-
-              </span>
-
-              <span className="game-map-distance">{Math.max(0, Math.round(hud.distance))} m away</span>
-
-            </div>
-
-
-
-            <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-center text-xs text-white/60">
-
-              <span>Solo save: Auto-saved</span>
-
-              <button
-
-                type="button"
-
-                onClick={resetSoloProgress}
-
-                className="text-red-400 hover:underline cursor-pointer"
-
-              >
-
-                Reset Solo Progress
-
-              </button>
-
-            </div>
-
-          </section>
-
-        </div>
-
       )}
 
+      {/* On-screen Mobile Controls (Joystick & Action Buttons) */}
+      <div className="game-mobile-controls sm:hidden absolute bottom-5 left-3 right-3 flex items-end justify-between pointer-events-none z-20">
+        {/* Joystick Base */}
+        <div
+          onPointerDown={handleJoystickPointerDown}
+          onPointerMove={handleJoystickPointerMove}
+          onPointerUp={handleJoystickPointerUp}
+          onPointerCancel={handleJoystickPointerUp}
+          className="game-joystick w-28 h-28 rounded-full bg-neutral-900/60 backdrop-blur-md border border-white/20 flex items-center justify-center touch-none pointer-events-auto active:bg-neutral-900/80"
+        >
+          <div
+            style={{
+              transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)`,
+            }}
+            className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-400 to-rose-400 shadow-lg border border-white/30 pointer-events-none"
+          />
+        </div>
+
+        {/* Action Buttons (Sprint & Jump) */}
+        <div className="flex flex-col gap-2.5 pointer-events-auto">
+          <button
+            type="button"
+            onPointerDown={() => {
+              inputRef.current.sprint = true;
+              setIsSprinting(true);
+            }}
+            onPointerUp={() => {
+              inputRef.current.sprint = false;
+              setIsSprinting(false);
+            }}
+            onPointerCancel={() => {
+              inputRef.current.sprint = false;
+              setIsSprinting(false);
+            }}
+            className={`w-14 h-14 rounded-full font-bold text-xs uppercase flex items-center justify-center shadow-xl border border-white/20 backdrop-blur-md transition-all ${
+              isSprinting ? "bg-amber-400 text-neutral-950 scale-95" : "bg-neutral-900/70 text-white"
+            }`}
+          >
+            Sprint
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              inputRef.current.jump = true;
+              setTimeout(() => {
+                inputRef.current.jump = false;
+              }, 120);
+            }}
+            className="w-14 h-14 rounded-full font-bold text-xs uppercase flex items-center justify-center shadow-xl border border-white/20 bg-neutral-900/70 backdrop-blur-md text-white active:bg-rose-500 active:scale-95 transition-all"
+          >
+            Jump
+          </button>
+        </div>
+      </div>
+
+      {/* Full Map & Solo Progress Overlay Modal */}
+      {mapOpen && (
+        <div className="fixed inset-0 bg-neutral-950/90 backdrop-blur-xl z-50 flex flex-col p-4 sm:p-8 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between pb-4 border-b border-white/10">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-amber-400" />
+              <h2 className="text-lg font-bold tracking-wide">Island Map & Expedition Guide</h2>
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setMapOpen(false)}
+              className="text-white hover:bg-white/10 rounded-full"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto py-6 grid sm:grid-cols-2 gap-4">
+            <div className="bg-neutral-900/70 rounded-2xl p-4 border border-white/10">
+              <h3 className="text-sm font-semibold text-amber-300 uppercase tracking-wider mb-3">
+                Key Coastal Landmarks
+              </h3>
+              <ul className="space-y-3">
+                {DISCOVERY_HOTSPOTS.map((spot) => (
+                  <li key={spot.id} className="p-3 rounded-xl bg-white/5 border border-white/5">
+                    <div className="text-sm font-bold text-white">{spot.name}</div>
+                    <div className="text-xs text-white/60 mt-0.5">{spot.desc}</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="bg-neutral-900/70 rounded-2xl p-4 border border-white/10 flex flex-col justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-amber-300 uppercase tracking-wider mb-3">
+                  Solo Progress & Save Data
+                </h3>
+                <p className="text-xs text-white/70 leading-relaxed mb-4">
+                  Your character choice, coordinate position, and visited areas are automatically saved
+                  locally to your browser device every few seconds. You can play completely offline as a
+                  standalone PWA.
+                </p>
+                <div className="text-xs font-mono text-white/50 bg-black/40 p-2.5 rounded-lg border border-white/5">
+                  Current Coords: X {playerCoords[0].toFixed(1)}, Z {playerCoords[2].toFixed(1)}
+                </div>
+              </div>
+
+              <div className="pt-6">
+                <Button
+                  variant="destructive"
+                  onClick={handleResetProgress}
+                  className="w-full text-xs font-semibold rounded-xl"
+                >
+                  Reset Local Save & Respawn at Pier
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
-
   );
-
-  }
+                     }
+            
