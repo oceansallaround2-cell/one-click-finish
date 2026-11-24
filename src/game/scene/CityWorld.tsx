@@ -204,10 +204,11 @@ export function CityWorld({ palette }: { palette: CityPalette }) {
         <planeGeometry args={[300, 80]} />
         <meshStandardMaterial color={palette.water} roughness={0.28} metalness={0.1} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 101]}>
-        <planeGeometry args={[300, 10]} />
-        <meshStandardMaterial color={palette.shore} roughness={1} />
-      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.32, 0]} receiveShadow>
+  <planeGeometry args={[2000, 2000]} />
+  <meshStandardMaterial color={palette.water} roughness={0.15} metalness={0.2} />
+</mesh>
+      
       <MatrixInstances count={10} setMatrices={roadMatrices} color={palette.road} geometry={boxGeometry} />
       <MatrixInstances count={170} setMatrices={laneMatrices} color={palette.roadMark} geometry={boxGeometry} />
       <MatrixInstances count={buildings.length} setMatrices={buildingMatrices} color={palette.buildingA} geometry={boxGeometry} />
