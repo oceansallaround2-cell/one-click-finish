@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, ClientOnly } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { GameView } from "@/game/GameView";
 
@@ -36,5 +36,9 @@ function Index() {
     }
   }, []);
 
-  return <GameView />;
+  return (
+    <ClientOnly fallback={<div className="w-full h-screen bg-slate-950 flex items-center justify-center text-white font-medium">Loading OUR CITY...</div>}>
+      <GameView />
+    </ClientOnly>
+  );
 }
