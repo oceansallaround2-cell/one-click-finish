@@ -13,6 +13,8 @@ import {
   Navigation,
   RotateCcw,
   Sparkles,
+  Wifi,
+  WifiOff,
   X,
   Zap,
 } from "lucide-react";
@@ -23,15 +25,55 @@ type GamePalette = CityPalette & AvatarPalette & { sun: string };
 type GameCamera = { yaw: number; pitch: number };
 type HudSnapshot = { x: number; z: number; distance: number; canInteract: boolean };
 
+interface SoloSaveData {
+  look: PlayerLook;
+  completed: boolean;
+  position: { x: number; z: number };
+  savedAt: number;
+}
+
+const STORAGE_KEY = "our_city_solo_save_v1";
 const GOAL = { x: 0, z: -73 };
 
+function loadSoloSave(): SoloSaveData | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as SoloSaveData;
+  } catch {
+    return null;
+  }
+}
+
+function saveSoloProgress(data: Partial<SoloSaveData>) {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = loadSoloSave() || {
+      look: "mira" as PlayerLook,
+      completed: false,
+      position: { x: 0, z: 12 },
+      savedAt: Date.now(),
+    };
+    const updated: SoloSaveData = {
+      ...existing,
+      ...data,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    // Storage might be full or restricted
+  }
+}
+
 function cssSwatch(name: string): string {
+  if (typeof document === "undefined") return "#ffffff";
   const canvas = document.createElement("canvas");
   canvas.width = 1;
   canvas.height = 1;
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return getComputedStyle(document.documentElement).color;
-  context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!context) return getComputedStyle(document.documentElement).color || "#ffffff";
+  context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#ffffff";
   context.fillRect(0, 0, 1, 1);
   const pixel = context.getImageData(0, 0, 1, 1).data;
   return `#${[pixel[0], pixel[1], pixel[2]].map((part) => (part ?? 0).toString(16).padStart(2, "0")).join("")}`;
@@ -39,34 +81,35 @@ function cssSwatch(name: string): string {
 
 function readPalette(): GamePalette {
   return {
-    sky: cssSwatch("--game-scene-sky"),
-    ground: cssSwatch("--game-scene-ground"),
-    road: cssSwatch("--game-scene-road"),
-    roadMark: cssSwatch("--game-scene-road-mark"),
-    buildingA: cssSwatch("--game-scene-building-a"),
-    buildingB: cssSwatch("--game-scene-building-b"),
-    buildingC: cssSwatch("--game-scene-building-c"),
-    window: cssSwatch("--game-scene-window"),
-    foliage: cssSwatch("--game-scene-foliage"),
-    trunk: cssSwatch("--game-scene-trunk"),
-    water: cssSwatch("--game-scene-water"),
-    shore: cssSwatch("--game-scene-shore"),
-    coral: cssSwatch("--game-coral"),
-    skin: cssSwatch("--game-scene-skin"),
-    hair: cssSwatch("--game-scene-hair"),
-    jacket: cssSwatch("--game-scene-jacket"),
-    dress: cssSwatch("--game-scene-dress"),
-    shirt: cssSwatch("--game-scene-shirt"),
-    jewelry: cssSwatch("--game-scene-jewelry"),
-    shoe: cssSwatch("--game-scene-shoe"),
-    eye: cssSwatch("--game-scene-eye"),
-    sun: cssSwatch("--game-scene-sun"),
+    sky: cssSwatch("--game-scene-sky") || "#f48c68",
+    ground: cssSwatch("--game-scene-ground") || "#1b2432",
+    road: cssSwatch("--game-scene-road") || "#151b24",
+    roadMark: cssSwatch("--game-scene-road-mark") || "#ffd166",
+    buildingA: cssSwatch("--game-scene-building-a") || "#2e3846",
+    buildingB: cssSwatch("--game-scene-building-b") || "#3f4d5f",
+    buildingC: cssSwatch("--game-scene-building-c") || "#ef476f",
+    window: cssSwatch("--game-scene-window") || "#ffd166",
+    foliage: cssSwatch("--game-scene-foliage") || "#06d6a0",
+    trunk: cssSwatch("--game-scene-trunk") || "#8d5b4c",
+    water: cssSwatch("--game-scene-water") || "#118ab2",
+    shore: cssSwatch("--game-scene-shore") || "#f9d77e",
+    coral: cssSwatch("--game-coral") || "#ff758f",
+    skin: cssSwatch("--game-scene-skin") || "#f4c29f",
+    hair: cssSwatch("--game-scene-hair") || "#2b2d42",
+    jacket: cssSwatch("--game-scene-jacket") || "#ef476f",
+    dress: cssSwatch("--game-scene-dress") || "#ff758f",
+    shirt: cssSwatch("--game-scene-shirt") || "#ffffff",
+    jewelry: cssSwatch("--game-scene-jewelry") || "#ffd166",
+    shoe: cssSwatch("--game-scene-shoe") || "#1b2432",
+    eye: cssSwatch("--game-scene-eye") || "#1b2432",
+    sun: cssSwatch("--game-scene-sun") || "#ffa07a",
   };
 }
 
 function PlayerController({
   palette,
   look,
+  initialPosition,
   movement,
   sprinting,
   jumpPending,
@@ -76,6 +119,7 @@ function PlayerController({
 }: {
   palette: GamePalette;
   look: PlayerLook;
+  initialPosition: { x: number; z: number };
   movement: { current: MoveInput };
   sprinting: { current: boolean };
   jumpPending: { current: boolean };
@@ -87,9 +131,17 @@ function PlayerController({
   const verticalSpeed = useRef(0);
   const motion = useRef(0);
   const elapsed = useRef(0);
+  const saveInterval = useRef(0);
   const cameraTarget = useMemo(() => new Vector3(), []);
   const desiredCamera = useMemo(() => new Vector3(), []);
   const direction = useMemo(() => new Vector3(), []);
+
+  useEffect(() => {
+    if (player.current) {
+      player.current.position.x = initialPosition.x;
+      player.current.position.z = initialPosition.z;
+    }
+  }, [initialPosition]);
 
   useFrame(({ camera }, frameDelta) => {
     const delta = Math.min(frameDelta, 0.05);
@@ -141,10 +193,17 @@ function PlayerController({
         canInteract: distance < 4.5 && !missionDone.current,
       });
     }
+
+    // Auto-save player coordinates to local storage every ~3 seconds
+    saveInterval.current += delta;
+    if (saveInterval.current > 3.0) {
+      saveInterval.current = 0;
+      saveSoloProgress({ position: { x: actor.position.x, z: actor.position.z } });
+    }
   });
 
   return (
-    <group ref={player} position={[0, 0, 12]}>
+    <group ref={player} position={[initialPosition.x, 0, initialPosition.z]}>
       <PlayerAvatar look={look} palette={palette} motion={motion} />
     </group>
   );
@@ -198,15 +257,44 @@ export function GameView() {
   const jumpPending = useRef(false);
   const cameraRig = useRef<GameCamera>({ yaw: 0, pitch: 0.16 });
   const missionDone = useRef(false);
-  const hudRef = useRef<HudSnapshot>({ x: 0, z: 12, distance: 85, canInteract: false });
-  const [look, setLook] = useState<PlayerLook>("mira");
+
+  // Restore saved offline progress
+  const [initialData] = useState(() => loadSoloSave());
+  const initialPos = initialData?.position || { x: 0, z: 12 };
+
+  const hudRef = useRef<HudSnapshot>({
+    x: initialPos.x,
+    z: initialPos.z,
+    distance: Math.hypot(initialPos.x - GOAL.x, initialPos.z - GOAL.z),
+    canInteract: false,
+  });
+
+  const [look, setLook] = useState<PlayerLook>(initialData?.look || "mira");
   const [hud, setHud] = useState(hudRef.current);
-  const [completed, setCompleted] = useState(false);
+  const [completed, setCompleted] = useState(Boolean(initialData?.completed));
   const [mapOpen, setMapOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
   const [stick, setStick] = useState({ x: 0, y: 0 });
   const stickPointer = useRef<number | null>(null);
   const stickElement = useRef<HTMLDivElement>(null);
+
+  // Sync mission done ref
+  useEffect(() => {
+    missionDone.current = completed;
+  }, [completed]);
+
+  // Online / Offline listener
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   const onHud = useCallback((snapshot: HudSnapshot) => {
     hudRef.current = snapshot;
@@ -217,8 +305,23 @@ export function GameView() {
     if (!hudRef.current.canInteract || missionDone.current) return;
     missionDone.current = true;
     setCompleted(true);
+    saveSoloProgress({ completed: true });
     setHud((current) => ({ ...current, canInteract: false }));
   }, []);
+
+  const handleLookChange = (nextLook: PlayerLook) => {
+    setLook(nextLook);
+    saveSoloProgress({ look: nextLook });
+  };
+
+  const resetSoloProgress = () => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      window.location.reload();
+    } catch {
+      // Ignore
+    }
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -249,7 +352,7 @@ export function GameView() {
     if (!element) return;
     const bounds = element.getBoundingClientRect();
     const rawX = (clientX - (bounds.left + bounds.width / 2)) / (bounds.width * 0.34);
-    const rawY = ((bounds.top + bounds.height / 2) - clientY) / (bounds.height * 0.34);
+    const rawY = (bounds.top + bounds.height / 2 - clientY) / (bounds.height * 0.34);
     const next = moveFromJoystick(rawX, rawY);
     movement.current = next;
     setStick(next);
@@ -292,6 +395,7 @@ export function GameView() {
           <PlayerController
             palette={palette}
             look={look}
+            initialPosition={initialPos}
             movement={movement}
             sprinting={sprinting}
             jumpPending={jumpPending}
@@ -303,23 +407,40 @@ export function GameView() {
       </div>
 
       <PointerLook cameraRig={cameraRig}>
-        <div className="game-look-indicator"><RotateCcw aria-hidden="true" /> <span>LOOK</span></div>
+        <div className="game-look-indicator">
+          <RotateCcw aria-hidden="true" /> <span>LOOK</span>
+        </div>
       </PointerLook>
 
       <header className="game-topbar">
         <div className="game-brand-lockup">
-          <div className="game-brand-mark"><Heart aria-hidden="true" fill="currentColor" /></div>
+          <div className="game-brand-mark">
+            <Heart aria-hidden="true" fill="currentColor" />
+          </div>
           <div className="game-brand-type">
             <span>OUR CITY</span>
             <small>A WORLD FOR TWO</small>
           </div>
         </div>
+
+        {/* Solo & Offline/Online Status Badge */}
         <div className="game-evening-badge">
           <span className="game-live-dot" />
-          <span>SOUTHPOINT</span>
+          <span>SOLO MODE</span>
           <i />
-          <small>GOLDEN HOUR</small>
+          <small className="flex items-center gap-1">
+            {isOnline ? (
+              <>
+                <Wifi className="w-3 h-3 inline" /> ONLINE
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3 h-3 inline" /> OFFLINE READY
+              </>
+            )}
+          </small>
         </div>
+
         <div className="game-top-actions">
           <div className="game-character-switch" role="group" aria-label="Choose a character">
             <Button
@@ -327,7 +448,7 @@ export function GameView() {
               variant="ghost"
               aria-pressed={look === "mira"}
               className={`game-character-option${look === "mira" ? " is-selected" : ""}`}
-              onClick={() => setLook("mira")}
+              onClick={() => handleLookChange("mira")}
             >
               Mira
             </Button>
@@ -336,12 +457,20 @@ export function GameView() {
               variant="ghost"
               aria-pressed={look === "leo"}
               className={`game-character-option${look === "leo" ? " is-selected" : ""}`}
-              onClick={() => setLook("leo")}
+              onClick={() => handleLookChange("leo")}
             >
               Leo
             </Button>
           </div>
-          <Button type="button" variant="ghost" size="icon" className="game-icon-button" aria-label="Open city map" title="Open city map" onClick={() => setMapOpen(true)}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="game-icon-button"
+            aria-label="Open city map"
+            title="Open city map"
+            onClick={() => setMapOpen(true)}
+          >
             <MapIcon aria-hidden="true" />
           </Button>
         </div>
@@ -360,11 +489,21 @@ export function GameView() {
       <section className={`game-mission${completed ? " is-complete" : ""}`} aria-live="polite">
         <div className="game-mission-heading">
           <span className="game-mission-index">01</span>
-          <span className="game-mission-kicker">AN EVENING FOR TWO</span>
-          {completed ? <Check className="game-mission-complete" aria-label="Complete" /> : <Sparkles className="game-mission-spark" aria-hidden="true" />}
+          <span className="game-mission-kicker">SOLO EXPEDITION</span>
+          {completed ? (
+            <Check className="game-mission-complete" aria-label="Complete" />
+          ) : (
+            <Sparkles className="game-mission-spark" aria-hidden="true" />
+          )}
         </div>
-        <h1>{completed ? "The view was worth it." : "Meet me at the lookout."}</h1>
-        <p>{completed ? "Southpoint is yours for the evening." : hud.canInteract ? "A little closer now." : "Follow the lights above the water."}</p>
+        <h1>{completed ? "Lookout reached & saved." : "Meet me at the lookout."}</h1>
+        <p>
+          {completed
+            ? "Your progress is saved locally. Explore freely!"
+            : hud.canInteract
+            ? "A little closer now."
+            : "Follow the lights above the water."}
+        </p>
         {!completed && hud.canInteract && (
           <Button type="button" variant="default" className="game-arrive-button" onClick={completeMission}>
             Arrive together <ArrowUpRight aria-hidden="true" />
@@ -400,71 +539,246 @@ export function GameView() {
             setStick({ x: 0, y: 0 });
           }}
         >
-          <span className="game-joystick-center"><span style={{ left: `${50 + stick.x * 27}%`, top: `${50 - stick.y * 27}%` }} /></span>
-          <span className="game-joystick-arrow"><ChevronUp aria-hidden="true" /></span>
+          <span className="game-joystick-center">
+            <span style={{ left: `${50 + stick.x * 27}%`, top: `${50 - stick.y * 27}%` }} />
+          </span>
+          <span className="game-joystick-arrow">
+            <ChevronUp aria-hidden="true" />
+          </span>
         </div>
         <div className="game-action-controls">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className={`game-action-button game-sprint-button${sprinting.current ? " is-pressed" : ""}`}
+            className={game-action-button game-sprint-button${sprinting.current ? " is-pressed" : ""}`}
+
             aria-label="Sprint"
+
             title="Sprint"
+
             onPointerDown={(event) => {
+
               event.preventDefault();
+
               sprinting.current = true;
+
             }}
-            onPointerUp={() => { sprinting.current = false; }}
-            onPointerLeave={() => { sprinting.current = false; }}
-            onPointerCancel={() => { sprinting.current = false; }}
+
+            onPointerUp={() => {
+
+              sprinting.current = false;
+
+            }}
+
+            onPointerLeave={() => {
+
+              sprinting.current = false;
+
+            }}
+
+            onPointerCancel={() => {
+
+              sprinting.current = false;
+
+            }}
+
           >
+
             <Zap aria-hidden="true" />
+
           </Button>
-          <Button type="button" variant="ghost" size="icon" className="game-action-button game-jump-button" aria-label="Jump" title="Jump" onClick={() => { jumpPending.current = true; }}>
+
+          <Button
+
+            type="button"
+
+            variant="ghost"
+
+            size="icon"
+
+            className="game-action-button game-jump-button"
+
+            aria-label="Jump"
+
+            title="Jump"
+
+            onClick={() => {
+
+              jumpPending.current = true;
+
+            }}
+
+          >
+
             <ChevronUp aria-hidden="true" />
+
           </Button>
+
           {hud.canInteract && (
-            <Button type="button" variant="default" size="icon" className="game-action-button game-interact-button" aria-label="Arrive together" title="Arrive together" onClick={completeMission}>
+
+            <Button
+
+              type="button"
+
+              variant="default"
+
+              size="icon"
+
+              className="game-action-button game-interact-button"
+
+              aria-label="Arrive together"
+
+              title="Arrive together"
+
+              onClick={completeMission}
+
+            >
+
               <Heart aria-hidden="true" />
+
             </Button>
+
           )}
+
         </div>
+
       </div>
 
+
+
       {mapOpen && (
-        <div className="game-map-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setMapOpen(false); }}>
+
+        <div
+
+          className="game-map-overlay"
+
+          role="presentation"
+
+          onMouseDown={(event) => {
+
+            if (event.target === event.currentTarget) setMapOpen(false);
+
+          }}
+
+        >
+
           <section className="game-map-panel" role="dialog" aria-modal="true" aria-labelledby="game-map-title">
+
             <div className="game-map-panel-heading">
+
               <div>
+
                 <span className="game-map-eyebrow">CITY GUIDE · SOUTHPOINT</span>
+
                 <h2 id="game-map-title">The waterfront</h2>
+
               </div>
-              <Button type="button" variant="ghost" size="icon" className="game-icon-button" aria-label="Close map" onClick={() => setMapOpen(false)}>
+
+              <Button
+
+                type="button"
+
+                variant="ghost"
+
+                size="icon"
+
+                className="game-icon-button"
+
+                aria-label="Close map"
+
+                onClick={() => setMapOpen(false)}
+
+              >
+
                 <X aria-hidden="true" />
+
               </Button>
+
             </div>
+
             <div className="game-large-map">
+
               <div className="game-large-map-grid" />
+
               <div className="game-large-map-road game-large-map-road-a" />
+
               <div className="game-large-map-road game-large-map-road-b" />
+
               <div className="game-large-map-road game-large-map-road-c" />
+
               <div className="game-large-map-water" />
+
               <div className="game-large-map-route" />
-              <div className="game-large-map-pin game-large-map-pin-start"><Navigation aria-hidden="true" /></div>
-              <div className="game-large-map-pin game-large-map-pin-goal"><MapPin aria-hidden="true" /></div>
+
+              <div className="game-large-map-pin game-large-map-pin-start">
+
+                <Navigation aria-hidden="true" />
+
+              </div>
+
+              <div className="game-large-map-pin game-large-map-pin-goal">
+
+                <MapPin aria-hidden="true" />
+
+              </div>
+
               <span className="game-large-map-label label-district">SOUTHPOINT</span>
+
               <span className="game-large-map-label label-marina">THE MARINA</span>
+
               <span className="game-large-map-label label-lookout">SUNSET LOOKOUT</span>
+
             </div>
+
             <div className="game-map-legend">
-              <span><i className="legend-player" /> YOU</span>
-              <span><i className="legend-destination" /> TONIGHT’S PLAN</span>
+
+              <span>
+
+                <i className="legend-player" /> YOU
+
+              </span>
+
+              <span>
+
+                <i className="legend-destination" /> TONIGHT’S PLAN
+
+              </span>
+
               <span className="game-map-distance">{Math.max(0, Math.round(hud.distance))} m away</span>
+
             </div>
+
+
+
+            <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-center text-xs text-white/60">
+
+              <span>Solo save: Auto-saved</span>
+
+              <button
+
+                type="button"
+
+                onClick={resetSoloProgress}
+
+                className="text-red-400 hover:underline cursor-pointer"
+
+              >
+
+                Reset Solo Progress
+
+              </button>
+
+            </div>
+
           </section>
+
         </div>
+
       )}
+
     </main>
+
   );
-}
+
+  }
