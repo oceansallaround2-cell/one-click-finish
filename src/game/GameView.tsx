@@ -412,7 +412,29 @@ export function GameView() {
         }}
       >
         <PointerLookController isEnabled={!mapOpen} />
-        <CityWorld />
+
+{/* Main lighting for the entire 3D world */}
+<color attach="background" args={["#f6b98b"]} />
+
+<ambientLight intensity={2} />
+
+<hemisphereLight
+  args={["#dceeff", "#8caa78", 1.5]}
+/>
+
+<directionalLight
+  position={[30, 50, 20]}
+  intensity={3}
+  castShadow
+/>
+
+<pointLight
+  position={[0, 15, 0]}
+  intensity={2}
+  distance={150}
+/>
+
+<CityWorld />
         <PlayerController
           character={activeChar}
           inputRef={inputRef}
