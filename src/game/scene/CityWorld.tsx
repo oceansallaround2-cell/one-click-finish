@@ -520,7 +520,11 @@ function BeachAndBoardwalk({ palette }: { palette: CityPalette }) {
 // -------------------------------------------------------------
 // MAIN CITYWORLD EXPORT
 // -------------------------------------------------------------
-export function CityWorld({ palette }: { palette: CityPalette }) {
+export function CityWorld({
+  palette = DEFAULT_CITY_PALETTE,
+}: {
+  palette?: CityPalette;
+}) {
   const beacon = useRef<Object3D | null>(null);
   const buildings = useMemo(() => CITY_BUILDINGS, []);
   const palmPoints = useMemo(() => PALM_LOCATIONS, []);
