@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { GameView } from "@/game/GameView";
 
 export const Route = createFileRoute("/")({
@@ -22,5 +23,18 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  useEffect(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((registration) => {
+          console.log("[PWA] Service worker registered with scope:", registration.scope);
+        })
+        .catch((error) => {
+          console.warn("[PWA] Service worker registration failed:", error);
+        });
+    }
+  }, []);
+
   return <GameView />;
 }
