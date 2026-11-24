@@ -214,10 +214,21 @@ function PlayerController({
   });
 
   return (
-    <group ref={avatarGroupRef}>
-      <PlayerAvatar character={character} />
-    </group>
-  );
+  <group ref={avatarGroupRef}>
+    {/* Temporary visibility test */}
+    <mesh position={[0, 1, 0]}>
+      <capsuleGeometry args={[0.45, 1, 8, 16]} />
+      <meshBasicMaterial color="#ff00ff" />
+    </mesh>
+
+    <mesh position={[0, 2, 0]}>
+      <sphereGeometry args={[0.35, 16, 16]} />
+      <meshBasicMaterial color="#00ffff" />
+    </mesh>
+
+    <PlayerAvatar character={character} />
+  </group>
+);
 }
 
 // Free orbit drag-to-look around character
