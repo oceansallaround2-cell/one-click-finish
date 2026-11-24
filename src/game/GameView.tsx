@@ -679,5 +679,4 @@ export function GameView() {
       )}
     </main>
   );
-                     }
-            
+                }    
