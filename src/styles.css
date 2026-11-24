@@ -177,3 +177,412 @@
     color: var(--color-foreground);
   }
 }
+/* ==========================================================================
+   OUR CITY — Game UI & Viewport
+   ========================================================================== */
+
+.our-city {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  user-select: none;
+  background-color: #0d131a;
+  touch-action: none;
+}
+
+.game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.game-look-layer {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.game-look-indicator {
+  position: absolute;
+  top: 4.8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+
+.game-look-indicator svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+/* Topbar Header */
+.game-topbar {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: auto;
+  z-index: 20;
+}
+
+.game-brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(18, 20, 26, 0.72);
+  backdrop-filter: blur(12px);
+  padding: 0.45rem 0.85rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.game-brand-mark {
+  color: var(--game-coral);
+  display: flex;
+  align-items: center;
+}
+
+.game-brand-mark svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.game-brand-title {
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+
+.game-brand-sub {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.12em;
+}
+
+.game-evening-badge {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .game-evening-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(18, 20, 26, 0.6);
+    backdrop-filter: blur(10px);
+    padding: 0.4rem 0.8rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+.game-live-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
+  background-color: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+.game-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.game-character-switch {
+  display: flex;
+  background: rgba(18, 20, 26, 0.72);
+  backdrop-filter: blur(12px);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.2rem;
+}
+
+.game-character-option {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.3rem 0.75rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.game-character-option.is-selected {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.game-icon-button {
+  background: rgba(18, 20, 26, 0.72) !important;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #fff !important;
+  border-radius: 9999px !important;
+  width: 2.2rem;
+  height: 2.2rem;
+}
+
+/* Mini-Map */
+.game-minimap {
+  position: absolute;
+  top: 4.8rem;
+  right: 1rem;
+  width: 5.5rem;
+  height: 5.5rem;
+  background: rgba(18, 20, 26, 0.75);
+  backdrop-filter: blur(12px);
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.game-map-player {
+  position: absolute;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #38bdf8;
+  border: 1.5px solid #fff;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 6px #38bdf8;
+}
+
+.game-map-destination {
+  position: absolute;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--game-coral);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 8px var(--game-coral);
+  animation: pulse 1.8s infinite;
+}
+
+.game-minimap-north {
+  position: absolute;
+  top: 0.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.game-minimap-name {
+  position: absolute;
+  bottom: 0.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.5rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Mission Objective Card */
+.game-mission {
+  position: absolute;
+  bottom: 6.5rem;
+  left: 1rem;
+  max-width: 17rem;
+  background: rgba(18, 20, 26, 0.8);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  color: #fff;
+  pointer-events: auto;
+  z-index: 15;
+}
+
+.game-mission-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.game-mission-index {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--game-coral);
+}
+
+.game-mission-kicker {
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.game-mission-spark {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: #fbbf24;
+}
+
+.game-mission h1 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.game-mission p {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 0.25rem;
+}
+
+.game-arrive-button {
+  margin-top: 0.6rem;
+  width: 100%;
+  background: var(--game-coral) !important;
+  color: #fff !important;
+  font-size: 0.75rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+}
+
+/* Touch Controls & Joystick */
+.game-mobile-controls {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 1.25rem;
+  right: 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.game-joystick {
+  width: 6.5rem;
+  height: 6.5rem;
+  border-radius: 50%;
+  background: rgba(18, 20, 26, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  position: relative;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.game-joystick-center {
+  position: absolute;
+  inset: 0;
+}
+
+.game-joystick-center > span {
+  position: absolute;
+  width: 2.2rem;
+  height: 2.2rem;
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.game-joystick-arrow {
+  position: absolute;
+  top: 0.3rem;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.game-action-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  pointer-events: auto;
+}
+
+.game-action-button {
+  width: 3rem !important;
+  height: 3rem !important;
+  border-radius: 50% !important;
+  background: rgba(18, 20, 26, 0.72) !important;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+}
+
+.game-interact-button {
+  background: var(--game-coral) !important;
+  border-color: transparent !important;
+}
+
+/* Map Overlay */
+.game-map-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 1rem;
+}
+
+.game-map-panel {
+  background: #15181f;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 1.25rem;
+  max-width: 28rem;
+  width: 100%;
+  padding: 1.25rem;
+  color: #fff;
+}
+
+.game-map-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.game-map-eyebrow {
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  color: var(--game-coral);
+  font-weight: 700;
+}
+
+.game-large-map {
+  position: relative;
+  width: 100%;
+  height: 16rem;
+  background: #0f1218;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.game-map-legend {
+  margin-top: 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.6);
+  }
