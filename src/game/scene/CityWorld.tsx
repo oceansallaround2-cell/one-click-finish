@@ -26,7 +26,21 @@ export type CityPalette = {
   shore: string;
   coral: string;
 };
-
+const DEFAULT_CITY_PALETTE: CityPalette = {
+  sky: "#f6b98b",
+  ground: "#8caa78",
+  road: "#343943",
+  roadMark: "#f5e6bd",
+  buildingA: "#e8cbb0",
+  buildingB: "#c8d6dc",
+  buildingC: "#d9b8a0",
+  window: "#ffe5a3",
+  foliage: "#397a50",
+  trunk: "#765037",
+  water: "#168fa5",
+  shore: "#58c3bd",
+  coral: "#ff806d",
+};
 // -------------------------------------------------------------
 // PROCEDURAL LAYOUT DEFINITIONS
 // -------------------------------------------------------------
