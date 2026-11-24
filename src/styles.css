@@ -106,6 +106,30 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+    /* Game 3D Scene Palette & Theme */
+  --game-scene-sky: #ff8e6e;
+  --game-scene-ground: #e7cbb1;
+  --game-scene-road: #22252c;
+  --game-scene-road-mark: #f3efe0;
+  --game-scene-building-a: #fbeee2;
+  --game-scene-building-b: #df7b64;
+  --game-scene-building-c: #1c2b3d;
+  --game-scene-window: #ffe8ab;
+  --game-scene-foliage: #1f6853;
+  --game-scene-trunk: #654637;
+  --game-scene-water: #0b556b;
+  --game-scene-shore: #dfb993;
+  --game-coral: #ff5a5f;
+  --game-scene-skin: #c6865d;
+  --game-scene-hair: #18191d;
+  --game-scene-jacket: #2b2f38;
+  --game-scene-dress: #ff3b68;
+  --game-scene-shirt: #ffffff;
+  --game-scene-jewelry: #f8c85c;
+  --game-scene-shoe: #0e0f14;
+  --game-scene-eye: #111111;
+  --game-scene-sun: #ffc97a;
+  
 }
 
 .dark {
