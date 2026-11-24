@@ -551,7 +551,8 @@ export function GameView() {
             type="button"
             variant="ghost"
             size="icon"
-            className={'game-action-button game-sprint-button${sprinting.current ? " is-pressed" : ""}`}
+            className={`game-action-button game-sprint-button${sprinting.current ? " is-pressed" : ""}`}
+            
 
             aria-label="Sprint"
 
