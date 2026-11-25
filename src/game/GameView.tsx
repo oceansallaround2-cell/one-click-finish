@@ -623,4 +623,266 @@ export function GameView() {
                 inputRef.current.sprint = false;
                 setSprintHeld(false);
               }}
-              className={`w-16 h-16 rounded-full font-black text-sm uppercase flex items-center justify-center border shadow-xl backdrop-blur-m
+              className={`w-16 h-16 rounded-full font-black text-sm uppercase flex items-center justify-center border shadow-xl backdrop-blur-md active:scale-95 ${
+                sprintHeld
+                  ? "bg-amber-500 text-black border-amber-300 ring-4 ring-amber-400/50"
+                  : "bg-slate-900/80 text-white border-white/30"
+              }`}
+            >
+              SPRINT
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                inputRef.current.jump = true;
+                setTimeout(() => {
+                  inputRef.current.jump = false;
+                }, 200);
+              }}
+              className="w-16 h-16 rounded-full bg-gradient-to-tr from-rose-600 to-amber-600 text-white font-black text-sm uppercase flex items-center justify-center border border-white/40 shadow-xl backdrop-blur-md active:scale-95"
+            >
+              JUMP
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 2-Player Co-op Room Modal */}
+{coopModalOpen && (
+        <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="w-full max-w-md bg-neutral-900 border border-white/20 rounded-2xl p-6 text-white shadow-2xl relative">
+            <button
+              type="button"
+              onClick={() => setCoopModalOpen(false)}
+              className="absolute top-4 right-4 text-white/60 hover:text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="flex items-center gap-3 text-rose-400 mb-2">
+              <Users className="w-6 h-6" />
+              <h2 className="text-xl font-black uppercase tracking-wider">Two-Player Co-Op</h2>
+            </div>
+            <p className="text-sm text-neutral-300 mb-6">
+              Share the room code with your partner to explore Our City together in real-time.
+            </p>
+
+            {roomCode ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-black/50 border border-amber-400/30 flex items-center justify-between">
+                  <div>
+<div className="text-xs uppercase text-amber-400 font-bold tracking-wider">
+                      Your Private Room Code
+                    </div>
+                    <div className="text-3xl font-black font-mono tracking-widest text-white mt-1">
+                      {roomCode}
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      void navigator.clipboard.writeText(roomCode);
+                      setCopyFeedback(true);
+                      setTimeout(() => setCopyFeedback(false), 2000);
+                    }}
+                    className="bg-amber-500 hover:bg-amber-600 text-black font-bold"
+                  >
+                    {copyFeedback ? "Copied!" : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+
+                <div className="text-xs text-emerald-400 font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {partnerState ? "Partner connected in city!" : "Waiting for partner to join..."}
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setRoomCode(null);
+                    setPartnerState(null);
+                  }}
+                  variant="outline"
+className="w-full border-red-500 text-red-400 hover:bg-red-500/20"
+                >
+                  Leave Room
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Button
+                  onClick={() => setRoomCode(createRoomCode())}
+                  className="w-full h-12 bg-gradient-to-r from-amber-500 to-rose-500 text-black font-black uppercase tracking-wider"
+                >
+                  Create New Room
+                </Button>
+
+                <div className="relative flex items-center justify-center my-4">
+                  <span className="bg-neutral-900 px-3 text-xs uppercase text-neutral-400">or</span>
+                  <div className="absolute inset-0 flex items-center -z-10">
+                    <div className="w-full border-t border-white/10" />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    maxLength={4}
+                    placeholder="ENTER 4-LETTER CODE"
+                    value={joinInput}
+                    onChange={(e) => 
+setJoinInput(e.target.value.toUpperCase())}
+                    className="flex-1 bg-black/60 border border-white/20 rounded-xl px-4 text-center font-mono font-black text-lg text-white uppercase focus:border-amber-400 outline-none"
+                  />
+                  <Button
+                    onClick={() => {
+                      const code = normalizeRoomCode(joinInput);
+                      if (code) {
+                        setRoomCode(code);
+                        setCoopModalOpen(false);
+                      }
+                    }}
+                    className="bg-white hover:bg-white/90 text-black font-bold px-6"
+                  >
+                    Join
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+)}
+
+      {/* Full City Satellite Map Overlay */}
+      {mapOpen && (
+        <div className="pointer-events-auto fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-lg p-4 sm:p-8 text-white">
+          <div className="flex items-center justify-between border-b border-white/15 pb-4">
+            <div className="flex items-center gap-3">
+              <Compass className="w-7 h-7 text-amber-400" />
+              <div>
+                <h1 className="text-xl font-black uppercase tracking-wider">Satellite GPS Radar</h1>
+                <p className="text-xs text-white/60">Our City – Vice Island Territory</p>
+              </div>
+            </div>
+            <button
+type="button"
+              onClick={() => setMapOpen(false)}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="flex-1 my-6 flex items-center justify-center">
+            <div className="relative w-full max-w-lg aspect-square rounded-2xl bg-neutral-900 border-2 border-white/20 overflow-hidden shadow-2xl flex items-center justify-center">
+              {/* Radar Grid Lines */}
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.15)_0,transparent_70%)]" />
+              <div className="absolute inset-0 grid grid-cols-6 grid-rows-6 border border-white/5 pointer-events-none" />
+
+              {/* Player marker */}
+              <div
+className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 border-2 border-white shadow-[0_0_12px_rgba(34,211,238,1)] z-10"
+                style={{
+                  left: `${50 + (position[0] / 80) * 45}%`,
+                  top: `${50 + (position[2] / 80) * 45}%`,
+                }}
+              />
+
+              {/* Mission target marker */}
+              <div
+                className="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 bg-amber-400 rotate-45 border-2 border-white shadow-[0_0_15px_rgba(251,191,36,1)] animate-bounce z-10"
+                style={{
+                  left: `${50 + (currentMission.targetPos[0] / 80) * 45}%`,
+                  top: `${50 + (currentMission.targetPos[2] / 80) * 45}%`,
+                }}
+              />
+
+              {/* Police car marker */}
+              {wantedLevel > 0 && (
+                <div
+                  className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-600 border-2 border-white shadow-[0_0_15px_rgba(239,68,68,1)] animate-ping z-10"
+                  style={{
+                    left: `${50 + (policePosRef.current[0] / 80) * 45}%`,
+                    top: `${50 + (policePosRef.current[2] / 80) * 45}%`,
+                  }}
+                />
+              )}
+
+              {/* Partner marker */}
+              {partnerState && (
+                <div
+                  className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-pink-500 border-2 border-white shadow-[0_0_12px_rgba(236,72,153,1)] z-10"
+                  style={{
+                    left: `${50 + (partnerState.position[0] / 80) * 45}%`,
+                    top: `${50 + (partnerState.position[2] / 80) * 45}%`,
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        <div className="flex flex-wrap items-center justify-around gap-4 bg-white/5 p-4 rounded-xl border border-white/10 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-cyan-400" /> You ({character})
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rotate-45 bg-amber-400" /> Mission Target
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-red-600" /> Police Patrol
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-pink-500" /> Partner
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
+
+// Physics & Movement Step Runner
+function ScenePhysicsLoop({
+  inputRef,
+  position,
+  setPosition,
+  setRotationY,
+  setSpeedKmh,
+  motionAnimRef,
+}: {
+  inputRef: React.MutableRefObject<MovementInput>;
+  position: [number, number, number];
+  setPosition: React.Dispatch<React.SetStateAction<[number, number, number]>>;
+  setRotationY: React.Dispatch<React.SetStateAction<number>>;
+  motionAnimRef: React.MutableRefObject<number>;
+  setSpeedKmh: React.Dispatch<React.SetStateAction<number>>;
+}) {
+  const currentPos = useRef<[number, number, number]>(position);
+  currentPos.current = position;
+
+  const currentRotY = useRef(0);
+  const currentSpeed = useRef(0);
+  const currentVelocityY = useRef(0);
+
+  useFrame((_, delta) => {
+    const dt = Math.min(delta, 0.1);
+    const step = computeMovementStep({
+      currentPosition: currentPos.current,
+      currentRotationY: currentRotY.current,
+      currentSpeed: currentSpeed.current,
+      velocityY: currentVelocityY.current,
+      input: inputRef.current,
+      deltaSeconds: dt,
+    });
+
+    currentRotY.current = step.nextRotationY;
+    currentSpeed.current = step.nextSpeed;
+    currentVelocityY.current = step.nextVelocityY;
+
+    setPosition(step.nextPosition);
+    setRotationY(step.nextRotationY);
+    setSpeedKmh(Math.round(step.nextSpeed * 3.6));
+    motionAnimRef.current = step.motion;
+  });
+
+  return null;
+      }
+
