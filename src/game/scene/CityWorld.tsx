@@ -1,136 +1,159 @@
-import { useFrame } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import {
   BoxGeometry,
   Color,
   CylinderGeometry,
   InstancedMesh,
+  Matrix4,
   MeshStandardMaterial,
-  Object3D,
+  type MeshStandardMaterialParameters,
   SphereGeometry,
-  TorusGeometry,
 } from "three";
 
 export type CityPalette = {
-  sky: string;
-  ground: string;
-  road: string;
-  roadMark: string;
-  buildingA: string;
-  buildingB: string;
-  buildingC: string;
-  window: string;
-  foliage: string;
-  trunk: string;
-  water: string;
-  shore: string;
-  coral: string;
+  oceanSurface: string;
+  oceanDepth: string;
+  sand: string;
+  grass: string;
+  concrete: string;
+  asphalt: string;
+  buildingWhite: string;
+  buildingPeach: string;
+  buildingCoral: string;
+  buildingTeal: string;
+  glass: string;
+  woodDeck: string;
+  roofTile: string;
+  palmTrunk: string;
+  palmFrond: string;
+  warmLight: string;
+  neonCyan: string;
+  neonMagenta: string;
+  goldAccent: string;
 };
-const DEFAULT_CITY_PALETTE: CityPalette = {
-  sky: "#f6b98b",
-  ground: "#8caa78",
-  road: "#343943",
-  roadMark: "#f5e6bd",
-  buildingA: "#e8cbb0",
-  buildingB: "#c8d6dc",
-  buildingC: "#d9b8a0",
-  window: "#ffe5a3",
-  foliage: "#397a50",
-  trunk: "#765037",
-  water: "#168fa5",
-  shore: "#58c3bd",
-  coral: "#ff806d",
-};
-// -------------------------------------------------------------
-// PROCEDURAL LAYOUT DEFINITIONS
-// -------------------------------------------------------------
 
-type BuildingSpec = {
+export const DEFAULT_CITY_PALETTE: CityPalette = {
+  oceanSurface: "#1a8ca8",
+  oceanDepth: "#0f4c64",
+  sand: "#ecd6be",
+  grass: "#7ea368",
+  concrete: "#b0b4b8",
+  asphalt: "#24272c",
+  buildingWhite: "#f5f0eb",
+  buildingPeach: "#e89882",
+  buildingCoral: "#dc6866",
+  buildingTeal: "#387a80",
+  glass: "#88c4d8",
+  woodDeck: "#a87550",
+  roofTile: "#c2543e",
+  palmTrunk: "#5e4334",
+  palmFrond: "#4d783e",
+  warmLight: "#ffdd80",
+  neonCyan: "#5ce6e6",
+  neonMagenta: "#f06292",
+  goldAccent: "#f4b942",
+};
+
+export interface BuildingPlot {
   x: number;
   z: number;
-  width: number;
-  depth: number;
-  height: number;
-  tone: number;
-  hasAwning?: boolean;
-};
-
-function generateCityBlocks(): BuildingSpec[] {
-  const list: BuildingSpec[] = [];
-  const coords = [-75, -45, -15, 15, 45, 75];
-
-  coords.forEach((x, cIdx) => {
-    coords.forEach((z, rIdx) => {
-      // Reserve center plaza and coastal zones for Cafe, Villa, Park & Beach
-      const distFromCenter = Math.sqrt(x * x + z * z);
-      if (distFromCenter < 28) return;
-      // Reserve south beach zone (z > 60) for boardwalk & beach
-      if (z > 55) return;
-      // Reserve west seaside zone (x < -50 && z > 0) for the Villa
-      if (x < -40 && z > 10 && z < 60) return;
-      // Reserve east zone (x > 35 && z > 10 && z < 55) for the Seaside Cafe
-      if (x > 30 && z > 15 && z < 55) return;
-
-      const seed = (cIdx * 97 + rIdx * 41 + 17) % 1000;
-      const isHighRise = Math.abs(x) < 35 && z < 10;
-      const height = isHighRise ? 18 + (seed % 22) : 7 + (seed % 14);
-
-      list.push({
-        x: x + ((seed % 7) - 3) * 0.8,
-        z: z + (((seed * 3) % 7) - 3) * 0.8,
-        width: 10 + (seed % 4),
-        depth: 10 + ((seed * 5) % 4),
-        height,
-        tone: seed % 3,
-        hasAwning: seed % 2 === 0 && height < 14,
-      });
-    });
-  });
-
-  return list;
+  w: number;
+  d: number;
+  h: number;
+  floors: number;
+  color: string;
+  roofType: "flat" | "terrace" | "peaked";
+  hasPool?: boolean;
 }
 
-const CITY_BUILDINGS = generateCityBlocks();
+export const CITY_BUILDINGS: BuildingPlot[] = [
+  // West Luxury District
+  { x: -32, z: -20, w: 14, d: 12, h: 22, floors: 6, color: "#f5f0eb", roofType: "terrace", hasPool: true },
+  { x: -32, z: 4, w: 12, d: 12, h: 16, floors: 4, color: "#e89882", roofType: "flat" },
+  { x: -32, z: 24, w: 14, d: 10, h: 12, floors: 3, color: "#f5f0eb", roofType: "peaked" },
 
-// Palm tree placements (coastal promenade, park boulevard, cafe garden)
-const PALM_LOCATIONS: [number, number][] = [
-  // Beach promenade
-  [-90, 68], [-70, 68], [-50, 68], [-30, 68], [-10, 68], [10, 68], [30, 68], [50, 68], [70, 68], [90, 68],
-  [-80, 78], [-60, 78], [-40, 78], [-20, 78], [0, 78], [20, 78], [40, 78], [60, 78], [80, 78],
-  // Villa garden
-  [-62, 28], [-64, 42], [-50, 48], [-46, 22],
-  // Seaside Cafe garden
-  [58, 25], [60, 45], [44, 48], [38, 20],
-  // Central Park boulevard
-  [-16, -12], [16, -12], [-16, 12], [16, 12],
-  [-28, 0], [28, 0], [0, -26], [0, 26],
-  // Northern residential avenue
-  [-60, -65], [-20, -65], [20, -65], [60, -65],
-  [-80, -40], [80, -40],
+  // Downtown Core (North)
+  { x: -10, z: -30, w: 12, d: 12, h: 32, floors: 9, color: "#387a80", roofType: "flat" },
+  { x: 10, z: -30, w: 14, d: 12, h: 38, floors: 11, color: "#f5f0eb", roofType: "terrace", hasPool: true },
+
+  // East Promenade & Boutique Resorts
+  { x: 32, z: -20, w: 12, d: 12, h: 18, floors: 5, color: "#dc6866", roofType: "flat" },
+  { x: 32, z: 4, w: 14, d: 10, h: 14, floors: 4, color: "#f5f0eb", roofType: "terrace" },
+  { x: 32, z: 24, w: 12, d: 12, h: 10, floors: 2, color: "#e89882", roofType: "peaked" },
+
+  // Central Plaza Borders
+  { x: -16, z: -6, w: 8, d: 8, h: 10, floors: 2, color: "#f5f0eb", roofType: "flat" },
+  { x: 16, z: -6, w: 8, d: 8, h: 10, floors: 2, color: "#387a80", roofType: "flat" },
 ];
 
-// Streetlamp positions lining main avenues
-const STREETLAMP_POSITIONS: [number, number, number][] = [
-  // North-South Main Ave (X = -28 & X = 28)
-  [-25, 0, -80], [-25, 0, -40], [-25, 0, 0], [-25, 0, 40],
-  [25, 0, -80], [25, 0, -40], [25, 0, 0], [25, 0, 40],
-  // East-West Grand Blvd (Z = 0)
-  [-80, 0, -4], [-40, 0, -4], [40, 0, -4], [80, 0, -4],
-  [-80, 0, 4], [-40, 0, 4], [40, 0, 4], [80, 0, 4],
-  // Beach Boardwalk Promenade (Z = 64)
-  [-80, 0, 64], [-50, 0, 64], [-20, 0, 64], [10, 0, 64], [40, 0, 64], [70, 0, 64],
+export interface PalmTreePlot {
+  x: number;
+  z: number;
+  scale: number;
+  tilt: number;
+}
+
+export const PALM_TREES: PalmTreePlot[] = [
+  // Beach Boardwalk Palm Line
+  { x: -28, z: 38, scale: 1.1, tilt: 0.12 },
+  { x: -20, z: 39, scale: 0.95, tilt: -0.08 },
+  { x: -12, z: 38.5, scale: 1.05, tilt: 0.15 },
+  { x: -4, z: 39, scale: 1.2, tilt: -0.1 },
+  { x: 4, z: 38.5, scale: 1.15, tilt: 0.05 },
+  { x: 12, z: 39, scale: 0.9, tilt: -0.12 },
+  { x: 20, z: 38.5, scale: 1.25, tilt: 0.14 },
+  { x: 28, z: 39, scale: 1.0, tilt: -0.06 },
+
+  // Central Promenade Avenue
+  { x: -4.5, z: 20, scale: 1.0, tilt: 0.05 },
+  { x: 4.5, z: 20, scale: 1.05, tilt: -0.05 },
+  { x: -4.5, z: 8, scale: 1.1, tilt: -0.08 },
+  { x: 4.5, z: 8, scale: 0.95, tilt: 0.08 },
+  { x: -4.5, z: -8, scale: 1.0, tilt: 0.06 },
+  { x: 4.5, z: -8, scale: 1.15, tilt: -0.06 },
+  { x: -4.5, z: -20, scale: 0.9, tilt: -0.05 },
+  { x: 4.5, z: -20, scale: 1.05, tilt: 0.05 },
+
+  // Café & Pier Gardens
+  { x: 18, z: 12, scale: 1.2, tilt: 0.18 },
+  { x: 26, z: 10, scale: 1.1, tilt: -0.12 },
+  { x: 20, z: 6, scale: 0.85, tilt: 0.08 },
+  { x: -18, z: 12, scale: 1.15, tilt: -0.15 },
+  { x: -24, z: 8, scale: 0.95, tilt: 0.1 },
 ];
 
-// Helper to batch-render instanced meshes with a shared material
-function InstancedGeometry({
+export interface StreetLightPlot {
+  x: number;
+  z: number;
+  rotationY: number;
+}
+
+export const STREET_LIGHTS: StreetLightPlot[] = [
+  { x: -5.5, z: 24, rotationY: Math.PI / 2 },
+  { x: 5.5, z: 24, rotationY: -Math.PI / 2 },
+  { x: -5.5, z: 12, rotationY: Math.PI / 2 },
+  { x: 5.5, z: 12, rotationY: -Math.PI / 2 },
+  { x: -5.5, z: 0, rotationY: Math.PI / 2 },
+  { x: 5.5, z: 0, rotationY: -Math.PI / 2 },
+  { x: -5.5, z: -12, rotationY: Math.PI / 2 },
+  { x: 5.5, z: -12, rotationY: -Math.PI / 2 },
+  { x: -5.5, z: -24, rotationY: Math.PI / 2 },
+  { x: 5.5, z: -24, rotationY: -Math.PI / 2 },
+  { x: -20, z: -5.5, rotationY: 0 },
+  { x: -10, z: -5.5, rotationY: 0 },
+  { x: 10, z: -5.5, rotationY: 0 },
+  { x: 20, z: -5.5, rotationY: 0 },
+];
+
+function InstancedGrid({
   count,
   setMatrices,
   color,
   geometry,
-  roughness = 0.85,
-  metalness = 0.1,
+  roughness,
+  metalness,
   emissive,
-  emissiveIntensity = 0,
+  emissiveIntensity,
 }: {
   count: number;
   setMatrices: (mesh: InstancedMesh) => void;
@@ -142,700 +165,522 @@ function InstancedGeometry({
   emissiveIntensity?: number;
 }) {
   const meshRef = useRef<InstancedMesh>(null);
-  const material = useMemo(
-    () =>
-      new MeshStandardMaterial({
-        color,
-        roughness,
-        metalness,
-        emissive: emissive ? new Color(emissive) : undefined,
-        emissiveIntensity,
-      }),
-    [color, roughness, metalness, emissive, emissiveIntensity],
-  );
+  const material = useMemo(() => {
+    const params: MeshStandardMaterialParameters = {
+      color,
+      roughness,
+      metalness,
+      emissiveIntensity,
+    };
+    if (emissive) {
+      params.emissive = new Color(emissive);
+    }
+    return new MeshStandardMaterial(params);
+  }, [color, roughness, metalness, emissive, emissiveIntensity]);
 
   useLayoutEffect(() => {
     if (!meshRef.current) return;
     setMatrices(meshRef.current);
     meshRef.current.instanceMatrix.needsUpdate = true;
-    meshRef.current.computeBoundingSphere();
   }, [setMatrices]);
 
   return <instancedMesh ref={meshRef} args={[geometry, material, count]} castShadow receiveShadow />;
 }
 
 // -------------------------------------------------------------
-// FURNISHED SEASIDE CAFÉ COMPONENT
-// Located at X = 48, Z = 32
+// CAFE INTERIOR & SEASIDE TERRACE
 // -------------------------------------------------------------
-function SeasideCafe({ palette }: { palette: CityPalette }) {
+function SeasideCafe({ position }: { position: [number, number, number] }) {
   return (
-    <group position={[48, 0, 32]}>
-      {/* Wooden Deck Patio */}
+    <group position={position}>
+      {/* Wooden Deck Floor */}
       <mesh position={[0, 0.08, 0]} receiveShadow>
-        <boxGeometry args={[22, 0.16, 18]} />
-        <meshStandardMaterial color="#8b5a2b" roughness={0.7} />
+        <boxGeometry args={[18, 0.16, 14]} />
+        <meshStandardMaterial color="#8f5e38" roughness={0.7} />
       </mesh>
 
-      {/* Main Bar / Counter Building Structure (Open Front) */}
-      <group position={[0, 2.2, -5.5]}>
-        {/* Back Wall */}
-        <mesh position={[0, 0, -2.5]} receiveShadow>
-          <boxGeometry args={[16, 4.2, 0.4]} />
-          <meshStandardMaterial color="#f8eedb" roughness={0.9} />
+      {/* Modern Open-Air Glass & Wood Pavilion */}
+      <group position={[0, 0, -3]}>
+        <mesh position={[0, 3.2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[16, 0.3, 7.5]} />
+          <meshStandardMaterial color="#f5f0eb" roughness={0.4} />
         </mesh>
-        {/* Left Side Wall */}
-        <mesh position={[-7.8, 0, 0]} receiveShadow>
-          <boxGeometry args={[0.4, 4.2, 5.2]} />
-          <meshStandardMaterial color="#f8eedb" roughness={0.9} />
+        <mesh position={[-7.5, 1.5, -3.4]}>
+          <boxGeometry args={[0.3, 3, 0.3]} />
+          <meshStandardMaterial color="#2d3142" />
         </mesh>
-        {/* Right Side Wall */}
-        <mesh position={[7.8, 0, 0]} receiveShadow>
-          <boxGeometry args={[0.4, 4.2, 5.2]} />
-          <meshStandardMaterial color="#f8eedb" roughness={0.9} />
+        <mesh position={[7.5, 1.5, -3.4]}>
+          <boxGeometry args={[0.3, 3, 0.3]} />
+          <meshStandardMaterial color="#2d3142" />
         </mesh>
-        {/* Roof Pergola / Ceiling */}
-        <mesh position={[0, 2.2, 0]} castShadow>
-          <boxGeometry args={[18, 0.3, 7.5]} />
-          <meshStandardMaterial color="#3a2518" roughness={0.7} />
+        <mesh position={[-7.5, 1.5, 3.4]}>
+          <boxGeometry args={[0.3, 3, 0.3]} />
+          <meshStandardMaterial color="#2d3142" />
         </mesh>
-        {/* Striped Beach Awning */}
-        <mesh position={[0, 1.8, 4.4]} rotation={[0.25, 0, 0]} castShadow>
-          <boxGeometry args={[18.4, 0.15, 3.2]} />
-          <meshStandardMaterial color={palette.coral} roughness={0.5} />
+        <mesh position={[7.5, 1.5, 3.4]}>
+          <boxGeometry args={[0.3, 3, 0.3]} />
+          <meshStandardMaterial color="#2d3142" />
         </mesh>
-        {/* Cafe Signboard */}
-        <mesh position={[0, 2.8, 3.8]}>
-          <boxGeometry args={[8, 0.8, 0.2]} />
-          <meshStandardMaterial color="#1a1c23" emissive="#ff8e6e" emissiveIntensity={0.25} />
+        <mesh position={[0, 1.5, -3.5]}>
+          <boxGeometry args={[15.6, 3, 0.1]} />
+          <meshStandardMaterial color="#e89882" roughness={0.6} />
         </mesh>
-        {/* Espresso Counter */}
-        <mesh position={[0, -1.1, 1.2]} castShadow receiveShadow>
-          <boxGeometry args={[11, 1.1, 1.4]} />
-          <meshStandardMaterial color="#3f271d" roughness={0.6} />
-        </mesh>
-        {/* Espresso Machine on counter */}
-        <mesh position={[-3, -0.3, 1.2]} castShadow>
-          <boxGeometry args={[1.4, 0.7, 0.8]} />
-          <meshStandardMaterial color="#silver" metalness={0.8} roughness={0.2} />
-        </mesh>
-        {/* Menu Chalkboard on back wall */}
-        <mesh position={[2, 0.4, -2.2]}>
-          <boxGeometry args={[3.2, 1.8, 0.1]} />
-          <meshStandardMaterial color="#1f2421" roughness={0.9} />
+        <mesh position={[0, 3.6, 3.8]}>
+          <boxGeometry args={[10, 0.6, 0.2]} />
+          <meshStandardMaterial color="#e63946" roughness={0.3} />
         </mesh>
       </group>
 
-      {/* Patio Dining Tables with Chairs & Sun Umbrellas */}
-      {[
+      {/* Espresso & Smoothie Bar Counter */}
+      <group position={[0, 0, -3.5]}>
+        <mesh position={[0, 0.55, 0]} castShadow receiveShadow>
+          <boxGeometry args={[10, 1.1, 1.2]} />
+          <meshStandardMaterial color="#f4f1de" roughness={0.3} />
+        </mesh>
+        <mesh position={[0, 1.12, 0]} castShadow>
+          <boxGeometry args={[10.4, 0.08, 1.4]} />
+          <meshStandardMaterial color="#222222" roughness={0.2} metalness={0.4} />
+        </mesh>
+        <mesh position={[-2, 1.4, 0]} castShadow>
+          <boxGeometry args={[1.2, 0.6, 0.7]} />
+          <meshStandardMaterial color="#999999" metalness={0.9} roughness={0.2} />
+        </mesh>
+        <mesh position={[2, 1.35, 0]}>
+          <cylinderGeometry args={[0.5, 0.5, 0.4, 16]} />
+          <meshStandardMaterial color="#a8dadc" roughness={0.1} />
+        </mesh>
+        {[-3.2, -1.6, 0, 1.6, 3.2].map((x, i) => (
+          <group key={`stool-${i}`} position={[x, 0, 1.3]}>
+            <mesh position={[0, 0.4, 0]} castShadow>
+              <cylinderGeometry args={[0.04, 0.04, 0.8, 8]} />
+              <meshStandardMaterial color="#333" metalness={0.8} />
+            </mesh>
+            <mesh position={[0, 0.8, 0]} castShadow>
+              <cylinderGeometry args={[0.3, 0.3, 0.08, 16]} />
+              <meshStandardMaterial color="#e76f51" roughness={0.5} />
+            </mesh>
+          </group>
+        ))}
+      </group>
+
+      {/* Patio Dining Tables */}
+      {([
         [-5.5, 2.5],
         [0, 3.5],
         [5.5, 2.5],
         [-5.5, -1],
         [5.5, -1],
-      ].map(([tx, tz], i) => (
+      ] as const).map(([tx, tz], i) => (
         <group key={`cafe-table-${i}`} position={[tx, 0.16, tz]}>
-          {/* Table Pedestal */}
           <mesh position={[0, 0.4, 0]} castShadow>
             <cylinderGeometry args={[0.08, 0.18, 0.8, 12]} />
             <meshStandardMaterial color="#111" metalness={0.7} />
           </mesh>
-          {/* Table Top */}
           <mesh position={[0, 0.8, 0]} castShadow receiveShadow>
             <cylinderGeometry args={[0.9, 0.9, 0.06, 24]} />
             <meshStandardMaterial color="#ecd6be" roughness={0.5} />
           </mesh>
-          {/* Sun Umbrella */}
           <mesh position={[0, 1.6, 0]}>
             <cylinderGeometry args={[0.04, 0.04, 2.8, 8]} />
-            <meshStandardMaterial color="#444" metalness={0.6} />
+            <meshStandardMaterial color="#444" />
           </mesh>
-          <mesh position={[0, 2.6, 0]} castShadow>
-            <coneGeometry args={[1.5, 0.65, 16]} />
-            <meshStandardMaterial color={i % 2 === 0 ? palette.coral : "#f6d55c"} roughness={0.6} />
+          <mesh position={[0, 2.7, 0]} castShadow>
+            <coneGeometry args={[1.6, 0.6, 16]} />
+            <meshStandardMaterial color={i % 2 === 0 ? "#e76f51" : "#2a9d8f"} roughness={0.7} />
           </mesh>
-          {/* 2 Chairs around table */}
-          {[-0.8, 0.8].map((cx, ci) => (
-            <group key={`chair-${ci}`} position={[cx, 0, 0]}>
-              <mesh position={[0, 0.25, 0]} castShadow>
-                <boxGeometry args={[0.42, 0.5, 0.42]} />
-                <meshStandardMaterial color="#3a2518" roughness={0.7} />
+          {[0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((angle, ci) => (
+            <mesh
+              key={`chair-${ci}`}
+              position={[Math.cos(angle) * 1.1, 0.28, Math.sin(angle) * 1.1]}
+              castShadow
+            >
+              <boxGeometry args={[0.42, 0.5, 0.42]} />
+              <meshStandardMaterial color="#264653" roughness={0.6} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+
+      {/* Decorative Planters */}
+      {[-8.5, 8.5].map((px, idx) => (
+        <group key={`planter-${idx}`} position={[px, 0.16, 2]}>
+          <mesh position={[0, 0.45, 0]} castShadow>
+            <boxGeometry args={[0.8, 0.9, 8]} />
+            <meshStandardMaterial color="#2d3142" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 1.1, 0]}>
+            <boxGeometry args={[0.65, 0.6, 7.8]} />
+            <meshStandardMaterial color="#4d783e" roughness={0.9} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// -------------------------------------------------------------
+// CENTRAL PLAZA FOUNTAIN & MONUMENT
+// -------------------------------------------------------------
+function CentralPlazaFountain({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      <mesh position={[0, 0.25, 0]} receiveShadow>
+        <cylinderGeometry args={[7, 7.4, 0.5, 32]} />
+        <meshStandardMaterial color="#d8d5db" roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 0.4, 0]} receiveShadow>
+        <cylinderGeometry args={[6.2, 6.2, 0.35, 32]} />
+        <meshStandardMaterial color="#2a9d8f" roughness={0.1} />
+      </mesh>
+      <mesh position={[0, 1.4, 0]} castShadow>
+        <cylinderGeometry args={[3, 3.4, 1.6, 24]} />
+        <meshStandardMaterial color="#f5f0eb" roughness={0.3} />
+      </mesh>
+      <mesh position={[0, 2.5, 0]} castShadow>
+        <cylinderGeometry args={[1.2, 1.4, 1.0, 16]} />
+        <meshStandardMaterial color="#e9c46a" metalness={0.7} roughness={0.3} />
+      </mesh>
+      <mesh position={[0, 3.7, 0]} castShadow>
+        <sphereGeometry args={[0.7, 16, 16]} />
+        <meshStandardMaterial color="#f4a261" metalness={0.6} roughness={0.2} />
+      </mesh>
+      <mesh position={[0, 4.6, 0]}>
+        <cylinderGeometry args={[0.2, 0.5, 0.8, 12]} />
+        <meshStandardMaterial color="#a8dadc" roughness={0.1} />
+      </mesh>
+      <pointLight position={[0, 3.5, 0]} color="#f4a261" intensity={2} distance={18} />
+    </group>
+  );
+}
+
+// -------------------------------------------------------------
+// SEASIDE BOARDWALK & MARINA PIER
+// -------------------------------------------------------------
+function SeasideBoardwalk() {
+  return (
+    <group>
+      <mesh position={[0, 0.12, 38]} receiveShadow>
+        <boxGeometry args={[74, 0.24, 8]} />
+        <meshStandardMaterial color="#9b6a47" roughness={0.8} />
+      </mesh>
+      <mesh position={[0, 0.45, 41.9]} castShadow>
+        <boxGeometry args={[74, 0.7, 0.15]} />
+        <meshStandardMaterial color="#e5e5e5" metalness={0.5} roughness={0.4} />
+      </mesh>
+      <group position={[0, 0.08, 52]}>
+        <mesh position={[0, 0, 0]} receiveShadow>
+          <boxGeometry args={[7, 0.24, 22]} />
+          <meshStandardMaterial color="#7a5134" roughness={0.9} />
+        </mesh>
+        {[-3.4, 3.4].map((px) => (
+          <mesh key={`pier-rail-${px}`} position={[px, 0.45, 0]} castShadow>
+            <boxGeometry args={[0.15, 0.7, 22]} />
+            <meshStandardMaterial color="#f1faee" metalness={0.4} />
+          </mesh>
+        ))}
+        {[-8, -2, 4, 8].map((pz, idx) => (
+          <group key={`boat-berth-${idx}`} position={[5.5, -0.4, pz]}>
+            <mesh position={[0, 0.35, 0]} rotation={[0, 0.1, 0]} castShadow>
+              <boxGeometry args={[4.2, 1.1, 2.2]} />
+              <meshStandardMaterial color={idx % 2 === 0 ? "#1d3557" : "#e63946"} roughness={0.3} />
+            </mesh>
+            <mesh position={[-0.4, 0.95, 0]} rotation={[0, 0.1, 0]}>
+              <boxGeometry args={[2, 0.7, 1.8]} />
+              <meshStandardMaterial color="#f1faee" roughness={0.4} />
+            </mesh>
+          </group>
+        ))}
+        <group position={[0, 1.6, 10.5]}>
+          <mesh position={[0, 0, 0]}>
+            <cylinderGeometry args={[0.1, 0.1, 3.2, 8]} />
+            <meshStandardMaterial color="#333" metalness={0.8} />
+          </mesh>
+          <mesh position={[0, 1.6, 0]}>
+            <sphereGeometry args={[0.3, 16, 16]} />
+            <meshStandardMaterial color="#ffbe0b" emissive={new Color("#ffbe0b")} emissiveIntensity={2} />
+          </mesh>
+          <pointLight position={[0, 1.8, 0]} color="#ffbe0b" intensity={3} distance={20} />
+        </group>
+      </group>
+    </group>
+  );
+}
+
+// -------------------------------------------------------------
+// LUXURY RESIDENTIAL VILLA WITH ROOFTOP INFINITY POOL
+// -------------------------------------------------------------
+function LuxuryVilla({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      <mesh position={[0, 4.5, 0]} castShadow receiveShadow>
+        <boxGeometry args={[14, 9, 12]} />
+        <meshStandardMaterial color="#f8f9fa" roughness={0.3} />
+      </mesh>
+      <mesh position={[0, 4.5, 6.05]}>
+        <boxGeometry args={[11, 6.8, 0.15]} />
+        <meshStandardMaterial color="#457b9d" roughness={0.1} metalness={0.8} />
+      </mesh>
+      <mesh position={[0, 9.4, 0]} receiveShadow>
+        <boxGeometry args={[14.8, 0.4, 12.8]} />
+        <meshStandardMaterial color="#e9ecef" roughness={0.4} />
+      </mesh>
+      <group position={[0, 9.8, 1.5]}>
+        <mesh position={[0, 0.4, 0]}>
+          <boxGeometry args={[9.5, 0.8, 5.5]} />
+          <meshStandardMaterial color="#dee2e6" roughness={0.5} />
+        </mesh>
+        <mesh position={[0, 0.65, 0]}>
+          <boxGeometry args={[8.8, 0.4, 4.8]} />
+          <meshStandardMaterial color="#00b4d8" roughness={0.05} />
+        </mesh>
+        <mesh position={[0, 1.1, 2.7]}>
+          <boxGeometry args={[9.5, 0.8, 0.1]} />
+          <meshStandardMaterial color="#caf0f8" roughness={0.1} />
+        </mesh>
+        {[-2.5, 0, 2.5].map((lx, idx) => (
+          <mesh key={`lounger-${idx}`} position={[lx, 0.95, -1.8]} rotation={[0, 0.15, 0]} castShadow>
+            <boxGeometry args={[1.8, 0.25, 0.7]} />
+            <meshStandardMaterial color="#ffb703" roughness={0.8} />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+// -------------------------------------------------------------
+// PROCEDURAL CITY BUILDINGS
+// -------------------------------------------------------------
+function ProceduralBuildings({ buildings }: { buildings: BuildingPlot[] }) {
+  const geomBox = useMemo(() => new BoxGeometry(1, 1, 1), []);
+  const matWindows = useMemo(
+    () => new MeshStandardMaterial({ color: "#8ecae6", roughness: 0.1, metalness: 0.7 }),
+    [],
+  );
+
+  return (
+    <group>
+      {buildings.map((b, i) => (
+        <group key={`bld-${i}`} position={[b.x, 0, b.z]}>
+          <mesh position={[0, b.h / 2, 0]} geometry={geomBox} scale={[b.w, b.h, b.d]} castShadow receiveShadow>
+            <meshStandardMaterial color={b.color} roughness={0.4} />
+          </mesh>
+
+          {/* Roof Accents */}
+          {b.roofType === "terrace" && (
+            <group position={[0, b.h, 0]}>
+              <mesh position={[0, 0.5, 0]} castShadow>
+                <boxGeometry args={[b.w - 1, 1, b.d - 1]} />
+                <meshStandardMaterial color="#2d3142" roughness={0.5} />
               </mesh>
-              <mesh position={[cx > 0 ? 0.18 : -0.18, 0.65, 0]} castShadow>
-                <boxGeometry args={[0.08, 0.5, 0.42]} />
-                <meshStandardMaterial color="#3a2518" roughness={0.7} />
-              </mesh>
+              {b.hasPool && (
+                <mesh position={[0, 0.8, 0]}>
+                  <boxGeometry args={[b.w - 4, 0.2, b.d - 4]} />
+                  <meshStandardMaterial color="#00b4d8" roughness={0.1} />
+                </mesh>
+              )}
             </group>
-          ))}
-        </group>
-      ))}
-
-      {/* Decorative Perimeter Planters */}
-      {[-9, 9].map((px) => (
-        <group key={`planter-${px}`} position={[px, 0.3, 0]}>
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[0.8, 0.6, 14]} />
-            <meshStandardMaterial color="#4b5563" roughness={0.8} />
-          </mesh>
-          <mesh position={[0, 0.35, 0]}>
-            <boxGeometry args={[0.6, 0.4, 13.6]} />
-            <meshStandardMaterial color="#2d5a27" roughness={0.9} />
-          </mesh>
-        </group>
-      ))}
-    </group>
-  );
-}
-
-// -------------------------------------------------------------
-// FURNISHED MODERN COASTAL VILLA
-// Located at X = -52, Z = 34
-// -------------------------------------------------------------
-function CoastalVilla({ palette }: { palette: CityPalette }) {
-  return (
-    <group position={[-52, 0, 34]}>
-      {/* Stone Foundation Terrace */}
-      <mesh position={[0, 0.2, 0]} receiveShadow>
-        <boxGeometry args={[26, 0.4, 22]} />
-        <meshStandardMaterial color="#dcd3c8" roughness={0.8} />
-      </mesh>
-
-      {/* Modern Main Living Room Pavilion */}
-      <group position={[-2, 2.5, -4]}>
-        {/* Back Wall */}
-        <mesh position={[0, 0, -4.5]} receiveShadow>
-          <boxGeometry args={[18, 4.8, 0.4]} />
-          <meshStandardMaterial color="#ffffff" roughness={0.3} />
-        </mesh>
-        {/* Left Wall with Window Cutout */}
-        <mesh position={[-8.8, 0, 0]} receiveShadow>
-          <boxGeometry args={[0.4, 4.8, 9]} />
-          <meshStandardMaterial color="#ffffff" roughness={0.3} />
-        </mesh>
-        {/* Cantilevered Modern Flat Roof */}
-        <mesh position={[1, 2.5, 1]} castShadow>
-          <boxGeometry args={[22, 0.4, 13]} />
-          <meshStandardMaterial color="#1e222a" roughness={0.5} />
-        </mesh>
-        {/* Tinted Floor-to-Ceiling Glass Panels */}
-        <mesh position={[0, 0, 4.3]}>
-          <boxGeometry args={[16, 4.4, 0.08]} />
-          <meshStandardMaterial color="#88bbdd" transparent opacity={0.35} roughness={0.1} />
-        </mesh>
-
-        {/* Interior Furniture: Modern L-Sofa Lounge */}
-        <group position={[-3, -1.8, -1]}>
-          <mesh position={[0, 0.3, 0]} castShadow receiveShadow>
-            <boxGeometry args={[4.2, 0.6, 1.8]} />
-            <meshStandardMaterial color="#2c3038" roughness={0.8} />
-          </mesh>
-          <mesh position={[1.4, 0.3, 1.6]} castShadow receiveShadow>
-            <boxGeometry args={[1.4, 0.6, 1.6]} />
-            <meshStandardMaterial color="#2c3038" roughness={0.8} />
-          </mesh>
-          {/* Back Cushions */}
-          <mesh position={[0, 0.8, -0.7]}>
-            <boxGeometry args={[4.2, 0.5, 0.4]} />
-            <meshStandardMaterial color="#3a3f4b" />
-          </mesh>
-          {/* Coffee Table */}
-          <mesh position={[0, 0.25, 1.8]} castShadow>
-            <boxGeometry args={[2.2, 0.35, 1.2]} />
-            <meshStandardMaterial color="#111" metalness={0.5} roughness={0.3} />
-          </mesh>
-          {/* Floor Rug */}
-          <mesh position={[0, 0.02, 1.2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <planeGeometry args={[4.8, 3.8]} />
-            <meshStandardMaterial color={palette.coral} roughness={0.9} />
-          </mesh>
-        </group>
-
-        {/* Ambient Warm Interior Chandelier Light */}
-        <mesh position={[0, 1.8, 0]}>
-          <sphereGeometry args={[0.3, 16, 16]} />
-          <meshStandardMaterial color="#fff0d0" emissive="#ffdd99" emissiveIntensity={0.8} />
-        </mesh>
-      </group>
-
-      {/* Oceanfront Sun Deck with Loungers & Private Infinity Plunge Pool */}
-      <group position={[1, 0.4, 5.5]}>
-        {/* Glass Guard Railing overlooking the ocean */}
-        <mesh position={[0, 0.55, 4.8]}>
-          <boxGeometry args={[22, 1.1, 0.08]} />
-          <meshStandardMaterial color="#a0c8e0" transparent opacity={0.4} roughness={0.1} />
-        </mesh>
-
-        {/* Plunge Pool basin */}
-        <mesh position={[5.5, 0.05, 0]} receiveShadow>
-          <boxGeometry args={[8, 0.3, 6]} />
-          <meshStandardMaterial color="#387780" roughness={0.3} />
-        </mesh>
-        <mesh position={[5.5, 0.16, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[7.4, 5.4]} />
-          <meshStandardMaterial color="#2ba4b8" roughness={0.1} metalness={0.3} transparent opacity={0.85} />
-        </mesh>
-
-        {/* 2 Chaise Sun Loungers */}
-        {[-4.5, -1.8].map((lx, idx) => (
-          <group key={`lounger-${idx}`} position={[lx, 0.1, 0]} rotation={[0, 0.1, 0]}>
-            <mesh position={[0, 0.15, 0]} castShadow>
-              <boxGeometry args={[1.2, 0.25, 3.2]} />
-              <meshStandardMaterial color="#f0f2f5" roughness={0.7} />
-            </mesh>
-            <mesh position={[0, 0.45, -1.1]} rotation={[0.4, 0, 0]} castShadow>
-              <boxGeometry args={[1.2, 0.2, 1.2]} />
-              <meshStandardMaterial color="#ffffff" roughness={0.7} />
-            </mesh>
-          </group>
-        ))}
-      </group>
-    </group>
-  );
-}
-
-// -------------------------------------------------------------
-// BEACH BOARDWALK & MARINA PIER
-// Located along the south shoreline (Z = 68 - 110)
-// -------------------------------------------------------------
-function BeachAndBoardwalk({ palette }: { palette: CityPalette }) {
-  return (
-    <group position={[0, 0, 72]}>
-      {/* Main Boardwalk Planks Runway */}
-      <mesh position={[0, 0.12, 0]} receiveShadow>
-        <boxGeometry args={[210, 0.24, 8]} />
-        <meshStandardMaterial color="#9c6644" roughness={0.8} />
-      </mesh>
-
-      {/* Boardwalk Safety Railings */}
-      {[-1, 1].map((side) => (
-        <group key={`boardwalk-rail-${side}`} position={[0, 0.6, side * 3.8]}>
-          <mesh>
-            <boxGeometry args={[210, 0.08, 0.08]} />
-            <meshStandardMaterial color="#582f0e" roughness={0.7} />
-          </mesh>
-          {Array.from({ length: 22 }).map((_, pi) => (
-            <mesh key={`post-${pi}`} position={[-100 + pi * 9.5, -0.3, 0]}>
-              <cylinderGeometry args={[0.06, 0.06, 0.8, 8]} />
-              <meshStandardMaterial color="#582f0e" roughness={0.7} />
-            </mesh>
-          ))}
-        </group>
-      ))}
-
-      {/* Long Pier Extending Deep into the Ocean */}
-      <group position={[0, 0, 24]}>
-        <mesh position={[0, 0.1, 0]} receiveShadow>
-          <boxGeometry args={[10, 0.24, 40]} />
-          <meshStandardMaterial color="#7f4f24" roughness={0.85} />
-        </mesh>
-        {/* Pier Support Stilts in Water */}
-        {[-14, -6, 2, 10, 18].map((pz, idx) => (
-          <group key={`stilt-${idx}`} position={[0, -1.2, pz]}>
-            <mesh position={[-4.5, 0, 0]}>
-              <cylinderGeometry args={[0.22, 0.22, 2.6, 8]} />
-              <meshStandardMaterial color="#3d2613" roughness={0.9} />
-            </mesh>
-            <mesh position={[4.5, 0, 0]}>
-              <cylinderGeometry args={[0.22, 0.22, 2.6, 8]} />
-              <meshStandardMaterial color="#3d2613" roughness={0.9} />
-            </mesh>
-          </group>
-        ))}
-
-        {/* Pier Gazebo / Lookout Pavilion at the Ocean Tip */}
-        <group position={[0, 1.8, 18]}>
-          <mesh position={[0, 1.8, 0]} castShadow>
-            <coneGeometry args={[4.2, 1.6, 8]} />
-            <meshStandardMaterial color={palette.coral} roughness={0.6} />
-          </mesh>
-          {[-3, 3].map((gx) =>
-            [-3, 3].map((gz) => (
-              <mesh key={`gz-pillar-${gx}-${gz}`} position={[gx * 0.8, 0, gz * 0.8]}>
-                <cylinderGeometry args={[0.12, 0.12, 3.4, 8]} />
-                <meshStandardMaterial color="#ffffff" roughness={0.4} />
-              </mesh>
-            )),
           )}
-          {/* Romantic Lovers' Bench at end of the pier */}
-          <group position={[0, -1.3, 1]}>
-            <mesh position={[0, 0.25, 0]} castShadow>
-              <boxGeometry args={[1.8, 0.45, 0.6]} />
-              <meshStandardMaterial color="#4a2810" roughness={0.7} />
-            </mesh>
-            <mesh position={[0, 0.6, -0.25]}>
-              <boxGeometry args={[1.8, 0.5, 0.1]} />
-              <meshStandardMaterial color="#4a2810" roughness={0.7} />
-            </mesh>
-          </group>
-        </group>
-      </group>
 
-      {/* Colorful Beach Umbrella Sets on Sandy Shoreline */}
-      {[-65, -35, 35, 65].map((bx, bi) => (
-        <group key={`beach-set-${bi}`} position={[bx, -0.05, 12]}>
-          {/* Umbrella */}
-          <mesh position={[0, 1.2, 0]}>
-            <cylinderGeometry args={[0.04, 0.04, 2.4, 8]} />
-            <meshStandardMaterial color="#333" />
-          </mesh>
-          <mesh position={[0, 2.2, 0]} castShadow>
-            <coneGeometry args={[1.8, 0.7, 16]} />
-            <meshStandardMaterial color={bi % 2 === 0 ? "#ff5a5f" : "#00a896"} roughness={0.6} />
-          </mesh>
-          {/* Beach Towel on Sand */}
-          <mesh position={[0.7, 0.02, 0.5]} rotation={[-Math.PI / 2, 0, 0.2]} receiveShadow>
-            <planeGeometry args={[1.1, 2.1]} />
-            <meshStandardMaterial color={bi % 2 === 0 ? "#f6d55c" : "#ff8e6e"} roughness={0.9} />
-          </mesh>
+          {b.roofType === "peaked" && (
+            <mesh position={[0, b.h + 2.5, 0]} castShadow>
+              <coneGeometry args={[Math.min(b.w, b.d) * 0.7, 5, 4]} />
+              <meshStandardMaterial color="#c2543e" roughness={0.6} />
+            </mesh>
+          )}
+
+          {/* Window Strips on Building Facades */}
+          {Array.from({ length: b.floors }).map((_, f) => {
+            const floorY = (f + 1) * (b.h / (b.floors + 1));
+            return (
+              <group key={`floor-${f}`} position={[0, floorY, 0]}>
+                <mesh position={[0, 0, b.d / 2 + 0.05]} scale={[b.w * 0.75, 1.2, 0.05]} material={matWindows} />
+                <mesh position={[0, 0, -b.d / 2 - 0.05]} scale={[b.w * 0.75, 1.2, 0.05]} material={matWindows} />
+              </group>
+            );
+          })}
         </group>
       ))}
-
-      {/* Lifeguard Lookout Tower */}
-      <group position={[-85, 0, 16]}>
-        <mesh position={[0, 1.6, 0]}>
-          <boxGeometry args={[2.8, 0.2, 2.8]} />
-          <meshStandardMaterial color="#ffffff" />
-        </mesh>
-        {[-1.2, 1.2].map((lx) =>
-          [-1.2, 1.2].map((lz) => (
-            <mesh key={`lg-leg-${lx}-${lz}`} position={[lx, 0.7, lz]}>
-              <cylinderGeometry args={[0.08, 0.08, 1.6, 8]} />
-              <meshStandardMaterial color="#e63946" />
-            </mesh>
-          )),
-        )}
-        <mesh position={[0, 2.6, 0]}>
-          <boxGeometry args={[2.4, 1.8, 2.4]} />
-          <meshStandardMaterial color="#f1faee" roughness={0.5} />
-        </mesh>
-        <mesh position={[0, 3.8, 0]} castShadow>
-          <coneGeometry args={[2.2, 0.8, 4]} rotation={[0, Math.PI / 4, 0]} />
-          <meshStandardMaterial color="#e63946" />
-        </mesh>
-      </group>
     </group>
   );
 }
 
+// -------------------------------------------------------------
+// PALM TREES & VEGETATION
+// -------------------------------------------------------------
+function ProceduralPalmTrees({ palms }: { palms: PalmTreePlot[] }) {
+  return (
+    <group>
+      {palms.map((p, i) => (
+        <group key={`palm-${i}`} position={[p.x, 0, p.z]} scale={p.scale}>
+          <mesh position={[0, 2.5, 0]} rotation={[p.tilt, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.2, 0.38, 5, 7]} />
+            <meshStandardMaterial color="#5e4334" roughness={0.9} />
+          </mesh>
+          <group position={[0, 4.8, 0]}>
+            {[0, 0.9, 1.8, 2.7, 3.6, 4.5, 5.4].map((rad, fIdx) => (
+              <mesh
+                key={`frond-${fIdx}`}
+                position={[Math.cos(rad) * 1.5, -0.4, Math.sin(rad) * 1.5]}
+                rotation={[0.3, rad, 0.4]}
+                castShadow
+              >
+                <coneGeometry args={[0.6, 3.2, 5]} />
+                <meshStandardMaterial color="#4d783e" roughness={0.6} />
+              </mesh>
+            ))}
+            <mesh position={[0, 0.2, 0]}>
+              <sphereGeometry args={[0.7, 8, 8]} />
+              <meshStandardMaterial color="#3e6331" roughness={0.7} />
+            </mesh>
+          </group>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// -------------------------------------------------------------
+// STREET LAMPS WITH WARM SUNSET GLOW
+// -------------------------------------------------------------
+function StreetLights({ lights }: { lights: StreetLightPlot[] }) {
+  return (
+    <group>
+      {lights.map((l, i) => (
+        <group key={`light-${i}`} position={[l.x, 0, l.z]} rotation={[0, l.rotationY, 0]}>
+          <mesh position={[0, 2.2, 0]} castShadow>
+            <cylinderGeometry args={[0.07, 0.1, 4.4, 8]} />
+            <meshStandardMaterial color="#1f2421" metalness={0.8} />
+          </mesh>
+          <mesh position={[0.6, 4.3, 0]} rotation={[0, 0, Math.PI / 4]}>
+            <cylinderGeometry args={[0.05, 0.05, 1.2, 8]} />
+            <meshStandardMaterial color="#1f2421" metalness={0.8} />
+          </mesh>
+          <mesh position={[1.1, 4.5, 0]}>
+            <sphereGeometry args={[0.22, 12, 12]} />
+            <meshStandardMaterial color="#ffea79" emissive={new Color("#ffea79")} emissiveIntensity={3} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// -------------------------------------------------------------
+// ROADS & PEDESTRIAN CROSSINGS
+// -------------------------------------------------------------
+function RoadNetwork() {
+  return (
+    <group position={[0, 0.015, 0]}>
+      <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[9, 78]} />
+        <meshStandardMaterial color="#222629" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0, -6]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[78, 9]} />
+        <meshStandardMaterial color="#222629" roughness={0.9} />
+      </mesh>
+      {[-32, -20, -8, 8, 20, 32].map((z, idx) => (
+        <mesh key={`dash-v-${idx}`} position={[0, 0.005, z]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[0.35, 3.5]} />
+          <meshStandardMaterial color="#e9ecef" roughness={0.4} />
+        </mesh>
+      ))}
+      {[-32, -20, 20, 32].map((x, idx) => (
+        <mesh key={`dash-h-${idx}`} position={[x, 0.005, -6]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[3.5, 0.35]} />
+          <meshStandardMaterial color="#e9ecef" roughness={0.4} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+// -------------------------------------------------------------
+// BEACH LIFEGUARD TOWER & SUNBEDS
+// -------------------------------------------------------------
+function BeachDecorations() {
+  return (
+    <group position={[-16, 0.05, 45]}>
+      {[-1.2, 1.2].map((lx) =>
+        [-1.2, 1.2].map((lz) => (
+          <mesh key={`lg-leg-${lx}-${lz}`} position={[lx, 0.7, lz]}>
+            <cylinderGeometry args={[0.08, 0.08, 1.6, 8]} />
+            <meshStandardMaterial color="#e63946" />
+          </mesh>
+        )),
+      )}
+      <mesh position={[0, 2.6, 0]}>
+        <boxGeometry args={[2.4, 1.8, 2.4]} />
+        <meshStandardMaterial color="#f1faee" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 3.8, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+        <coneGeometry args={[2.2, 0.8, 4]} />
+        <meshStandardMaterial color="#e63946" />
+      </mesh>
+    </group>
+  );
+}
 // -------------------------------------------------------------
 // MAIN CITYWORLD EXPORT
 // -------------------------------------------------------------
 export function CityWorld({
-  palette = DEFAULT_CITY_PALETTE,
+  palette = DEFAULT_CITY_PALETTE,
 }: {
-  palette?: CityPalette;
+  palette?: CityPalette;
 }) {
-  const beacon = useRef<Object3D | null>(null);
-  const buildings = useMemo(() => CITY_BUILDINGS, []);
-  const palmPoints = useMemo(() => PALM_LOCATIONS, []);
-  const lampPoints = useMemo(() => STREETLAMP_POSITIONS, []);
+  return (
+    <group name="tropical-island-city">
+      {/* 1. Surrounding Ocean */}
+      <mesh position={[0, -0.4, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[900, 900]} />
+        <meshStandardMaterial color={palette.oceanSurface} roughness={0.08} metalness={0.2} />
+      </mesh>
+         {/* 2. Sandy Beach Perimeter */}
+      <mesh position={[0, -0.05, 12]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[96, 96]} />
+        <meshStandardMaterial color={palette.sand} roughness={0.9} />
+      </mesh>
+{/* 3. Main City Island Ground */}
+      <mesh position={[0, 0, -6]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[84, 84]} />
+        <meshStandardMaterial color={palette.grass} roughness={0.8} />
+      </mesh>
 
-  const boxGeometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
-  const windowGeometry = useMemo(() => new BoxGeometry(0.85, 1.25, 0.12), []);
-  const trunkGeometry = useMemo(() => new CylinderGeometry(0.24, 0.38, 5.5, 8), []);
-  const leafGeometry = useMemo(() => new CylinderGeometry(0.04, 0.32, 4.0, 6), []);
-  const streetlampGeometry = useMemo(() => new CylinderGeometry(0.09, 0.14, 5.2, 8), []);
-  const bulbGeometry = useMemo(() => new SphereGeometry(0.3, 12, 12), []);
-  const benchGeometry = useMemo(() => new BoxGeometry(1.9, 0.45, 0.65), []);
-  const scratch = useMemo(() => new Object3D(), []);
+      {/* Concrete Promenade Sidewalks */}
+      <mesh position={[0, 0.008, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[14, 78]} />
+        <meshStandardMaterial color={palette.concrete} roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 0.008, -6]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[78, 14]} />
+        <meshStandardMaterial color={palette.concrete} roughness={0.7} />
+      </mesh>
 
-  // Building transformation batching
-  const buildingMatrices = useMemo(
-    () => (mesh: InstancedMesh) => {
-      buildings.forEach((item, index) => {
-        scratch.position.set(item.x, item.height / 2, item.z);
-        scratch.scale.set(item.width, item.height, item.depth);
-        scratch.rotation.set(0, 0, 0);
-        scratch.updateMatrix();
-        mesh.setMatrixAt(index, scratch.matrix);
+      {/* Roads and Crossings */}
+      <RoadNetwork />
 
-        const toneColor =
-          item.tone === 0 ? palette.buildingA : item.tone === 1 ? palette.buildingB : palette.buildingC;
-        mesh.setColorAt(index, new Color(toneColor));
-      });
-    },
-    [buildings, palette, scratch],
-  );
+      {/* Procedural Buildings */}
+      <ProceduralBuildings buildings={CITY_BUILDINGS} />
 
-  // Window placement batching
-  const windowPlacements = useMemo(() => {
-    const list: { x: number; y: number; z: number; isFacingX: boolean }[] = [];
-    buildings.forEach((item) => {
-      const floors = Math.max(1, Math.floor((item.height - 2.5) / 3.4));
-      const cols = Math.max(2, Math.floor(item.width / 2.3));
+      {/* Luxury Penthouse Villa with Rooftop Pool */}
+      <LuxuryVilla position={[-20, 0, -22]} />
+{/* Central Plaza Fountain */}
+      <CentralPlazaFountain position={[0, 0, -6]} />
 
-      for (let floor = 0; floor < floors; floor += 1) {
-        for (let col = 0; col < cols; col += 1) {
-          const offset = (col - (cols - 1) / 2) * 2.1;
-          const y = 2.0 + floor * 3.4;
-          // Front window
-          list.push({ x: item.x + offset, y, z: item.z + item.depth / 2 + 0.08, isFacingX: false });
-          // Side window
-          list.push({ x: item.x + item.width / 2 + 0.08, y, z: item.z + offset, isFacingX: true });
-        }
+      {/* Seaside Boardwalk & Marina Berths */}
+      <SeasideBoardwalk />
+
+      {/* Beach Lifeguard Post */}
+      <BeachDecorations />
+
+      {/* Seaside Open-Air Cafe */}
+      <SeasideCafe position={[22, 0, 14]} />
+
+      {/* Palm Trees throughout Island */}
+      <ProceduralPalmTrees palms={PALM_TREES} />
+
+      {/* Street Lighting Along Roads */}
+      <StreetLights lights={STREET_LIGHTS} />
+    </group>
+  );
       }
-    });
-    return list;
-  }, [buildings]);
-
-  const windowMatrices = useMemo(
-    () => (mesh: InstancedMesh) => {
-      windowPlacements.forEach((win, index) => {
-        scratch.position.set(win.x, win.y, win.z);
-        scratch.scale.set(1, 1, 1);
-        scratch.rotation.set(0, win.isFacingX ? Math.PI / 2 : 0, 0);
-        scratch.updateMatrix();
-        mesh.setMatrixAt(index, scratch.matrix);
-      });
-    },
-    [windowPlacements, scratch],
-  );
-
-  // Road surfaces
-  const roadMatrices = useMemo(
-    () => (mesh: InstancedMesh) => {
-      const mainAvenues = [-60, -25, 0, 25, 60];
-      let idx = 0;
-      mainAvenues.forEach((pos) => {
-        // North-South thoroughfare
-        scratch.position.set(pos, 0.015, 0);
-        scratch.scale.set(9.2, 0.04, 230);
-        scratch.rotation.set(0, 0, 0);
-        scratch.updateMatrix();
-        mesh.setMatrixAt(idx++, scratch.matrix);
-
-        // East-West thoroughfare
-        scratch.position.set(0, 0.015, pos);
-        scratch.scale.set(230, 0.04, 9.2);
-        scratch.rotation.set(0, 0, 0);
-        scratch.updateMatrix();
-        mesh.setMatrixAt(idx++, scratch.matrix);
-      });
-    },
-    [scratch],
-  );
-
-  // White lane dashes
-  const laneMatrices = useMemo(
-    () => (mesh: InstancedMesh) => {
-      const mainAvenues = [-60, -25, 0, 25, 60];
-      let idx = 0;
-      mainAvenues.forEach((pos) => {
-        for (let step = -105; step <= 105; step += 12) {
-          // NS lane line
-          scratch.position.set(pos, 0.038, step);
-          scratch.scale.set(0.2, 0.01, 4.5);
-          scratch.rotation.set(0, 0, 0);
-          scratch.updateMatrix();
-          mesh.setMatrixAt(idx++, scratch.matrix);
-
-          // EW lane line
-          scratch.position.set(step, 0.038, pos);
-          scratch.scale.set(4.5, 0.01, 0.2);
-          scratch.rotation.set(0, 0, 0);
-          scratch.updateMatrix();
-          mesh.setMatrixAt(idx++, scratch.matrix);
-        }
-      });
-    },
-    [scratch],
-  );
-
-  // Palm trees
-  const palmTrunkMatrices = useMemo(
-    () => (mesh: InstancedMesh) => {
-      palmPoints.forEach(([x, z], i) => {
-        scratch.position.set(x, 2.7, z);
-        // Gentle organic palm curve
-        scratch.rotation.set(0.08, (i % 6) * 1.05, 0.06);
-        scratch.scale.set(1 + (i % 3) * 0.06, 1, 1 + (i % 2) * 0.08);
-        scratch.updateMatrix();
-        mesh.setMatrixAt(i, scratch.matrix);
-      });
-    },
-    [palmPoints, scratch],
-  );
-
-  const palmLeafMatrices = useMemo(
-    () => (mesh: InstancedMesh) => {
-      palmPoints.forEach(([x, z], treeIdx) => {
-        for (let leaf = 0; leaf < 8; leaf += 1) {
-          const slot = treeIdx * 8 + leaf;
-          scratch.position.set(x, 5.4, z);
-          scratch.rotation.set(0.92, (leaf / 8) * Math.PI * 2 + treeIdx * 0.4, 0.22);
-          scratch.scale.set(1, 1, 0.9);
-          scratch.updateMatrix();
-          mesh.setMatrixAt(slot, scratch.matrix);
-        }
-      });
-    },
-    [palmPoints, scratch],
-  );
-
-  // Streetlamps
-  const streetlampPoles = useMemo(
-    () => (mesh: InstancedMesh) => {
-      lampPoints.forEach(([x, y, z], idx) => {
-        scratch.position.set(x, y + 2.6, z);
-        scratch.scale.set(1, 1, 1);
-        scratch.rotation.set(0, 0, 0);
-        scratch.updateMatrix();
-        mesh.setMatrixAt(idx, scratch.matrix);
-      });
-    },
-    [lampPoints, scratch],
-  );
-
-  const streetlampBulbs = useMemo(
-    () => (mesh: InstancedMesh) => {
-      lampPoints.forEach(([x, y, z], idx) => {
-        scratch.position.set(x, y + 5.3, z);
-        scratch.scale.set(1, 1, 1);
-        scratch.rotation.set(0, 0, 0);
-        scratch.updateMatrix();
-        mesh.setMatrixAt(idx, scratch.matrix);
-      });
-    },
-    [lampPoints, scratch],
-  );
-
-  // Sidewalk Benches
-  const benchLocations: [number, number, number, number][] = useMemo(
-    () => [
-      [-19, 0.22, 0, 0],
-      [19, 0.22, 0, 0],
-      [0, 0.22, -19, Math.PI / 2],
-      [0, 0.22, 19, Math.PI / 2],
-      [-22, 0.22, 35, 0],
-      [22, 0.22, 35, 0],
-      [-75, 0.22, 60, 0],
-      [75, 0.22, 60, 0],
-    ],
-    [],
-  );
-
-  const benchMatrices = useMemo(
-    () => (mesh: InstancedMesh) => {
-      benchLocations.forEach(([x, y, z, rot], idx) => {
-        scratch.position.set(x, y, z);
-        scratch.scale.set(1, 1, 1);
-        scratch.rotation.set(0, rot, 0);
-        scratch.updateMatrix();
-        mesh.setMatrixAt(idx, scratch.matrix);
-      });
-    },
-    [benchLocations, scratch],
-  );
-
-  useFrame((_, delta) => {
-    if (beacon.current) beacon.current.rotation.y += delta * 0.45;
-  });
-
-  return (
-    <group>
-      {/* ---------------- 1. SURROUNDING OCEAN (DEPTH-SORTED TO PREVENT FLICKER) ---------------- */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.45, 0]}>
-        <planeGeometry args={[3000, 3000]} />
-        <meshStandardMaterial color={palette.water} roughness={0.12} metalness={0.25} />
-      </mesh>
-
-      {/* Shallow Turquoise Coastal Reef Shoreline */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]}>
-        <planeGeometry args={[270, 270]} />
-        <meshStandardMaterial color={palette.shore} roughness={0.35} metalness={0.1} />
-      </mesh>
-
-      {/* Main Island Ground Surface */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[220, 220]} />
-        <meshStandardMaterial color={palette.ground} roughness={0.98} />
-      </mesh>
-
-      {/* Sandy Beach Strip in the South */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 80]} receiveShadow>
-        <planeGeometry args={[220, 48]} />
-        <meshStandardMaterial color="#eed7a1" roughness={0.95} />
-      </mesh>
-
-      {/* ---------------- 2. ROAD NETWORK & HIGHWAYS ---------------- */}
-      <InstancedGeometry count={10} setMatrices={roadMatrices} color={palette.road} geometry={boxGeometry} />
-      <InstancedGeometry count={190} setMatrices={laneMatrices} color={palette.roadMark} geometry={boxGeometry} />
-
-      {/* ---------------- 3. CITY BUILDINGS & WINDOW LIGHTS ---------------- */}
-      <InstancedGeometry
-        count={buildings.length}
-        setMatrices={buildingMatrices}
-        color={palette.buildingA}
-        geometry={boxGeometry}
-      />
-      <InstancedGeometry
-        count={windowPlacements.length}
-        setMatrices={windowMatrices}
-        color={palette.window}
-        geometry={windowGeometry}
-        roughness={0.2}
-        metalness={0.7}
-      />
-
-      {/* ---------------- 4. STREET FURNITURE (LAMPS, BENCHES, PALMS) ---------------- */}
-      <InstancedGeometry
-        count={palmPoints.length}
-        setMatrices={palmTrunkMatrices}
-        color={palette.trunk}
-        geometry={trunkGeometry}
-      />
-      <InstancedGeometry
-        count={palmPoints.length * 8}
-        setMatrices={palmLeafMatrices}
-        color={palette.foliage}
-        geometry={leafGeometry}
-        roughness={0.6}
-      />
-      <InstancedGeometry
-        count={lampPoints.length}
-        setMatrices={streetlampPoles}
-        color="#2b2d42"
-        geometry={streetlampGeometry}
-        metalness={0.8}
-        roughness={0.3}
-      />
-      <InstancedGeometry
-        count={lampPoints.length}
-        setMatrices={streetlampBulbs}
-        color="#fff1c5"
-        geometry={bulbGeometry}
-        emissive="#ffcc66"
-        emissiveIntensity={1.2}
-      />
-      <InstancedGeometry
-        count={benchLocations.length}
-        setMatrices={benchMatrices}
-        color="#4a3728"
-        geometry={benchGeometry}
-      />
-
-      {/* ---------------- 5. WALK-IN FURNISHED LOCATIONS ---------------- */}
-      <SeasideCafe palette={palette} />
-      <CoastalVilla palette={palette} />
-      <BeachAndBoardwalk palette={palette} />
-
-      {/* ---------------- 6. ROTATING CITY CENTER BEACON / MONUMENT ---------------- */}
-      <group position={[0, 0.15, 0]} ref={beacon}>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[3.2, 0.16, 12, 64]} />
-          <meshStandardMaterial color={palette.coral} emissive={palette.coral} emissiveIntensity={0.3} />
-        </mesh>
-        <mesh position={[0, 2.8, 0]}>
-          <cylinderGeometry args={[0.06, 0.06, 5.6, 12]} />
-          <meshStandardMaterial
-            color={palette.coral}
-            emissive={palette.coral}
-            emissiveIntensity={0.25}
-            transparent
-            opacity={0.7}
-          />
-        </mesh>
-      </group>
-    </group>
-  );
-}
