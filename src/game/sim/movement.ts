@@ -12,8 +12,10 @@ export type MovementInput = {
 export type MovementVector = {
   nextPosition: [number, number, number];
   rotationY: number;
+  facingAngle: number | null;
   isMoving: boolean;
   speed: number;
+  currentSpeed: number;
 };
 
 export function clampJoystickInput(input: { x: number; y: number }): { x: number; y: number } {
@@ -78,7 +80,9 @@ export function computeMovementStep(
       currentPos[2] + (isMoving ? moveZ : 0),
     ],
     rotationY: targetRotation,
+    facingAngle: isMoving ? targetRotation : null,
     isMoving,
     speed,
+    currentSpeed: speed,
   };
 }
