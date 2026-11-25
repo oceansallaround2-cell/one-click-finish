@@ -2,21 +2,35 @@ export type MoveInput = { x: number; y: number };
 export type WorldDirection = { x: number; z: number };
 
 export type MovementInput = {
-  forward: number;
-  turn: number;
+  moveX: number;
+  moveZ: number;
   sprint: boolean;
   jump: boolean;
-  interact: boolean;
 };
 
-export type MovementVector = {
-  nextPosition: [number, number, number];
-  rotationY: number;
-  facingAngle: number | null;
-  isMoving: boolean;
-  speed: number;
+export type MovementStepParams = {
+  currentPosition: [number, number, number];
+  currentRotationY: number;
   currentSpeed: number;
+  velocityY: number;
+  input: MovementInput;
+  deltaSeconds: number;
 };
+
+export type MovementStepResult = {
+  nextPosition: [number, number, number];
+  nextRotationY: number;
+  nextSpeed: number;
+  nextVelocityY: number;
+  /** Animation amount for the avatar: 0 = idle, 1 = walk, 1.4 = sprint */
+  motion: number;
+};
+
+export const GROUND_Y = 0.9;
+const WALK_SPEED = 4.8;
+const SPRINT_SPEED = 6.7;
+const JUMP_VELOCITY = 7;
+const GRAVITY = 22;
 
 export function clampJoystickInput(input: { x: number; y: number }): { x: number; y: number } {
   const len = Math.hypot(input.x, input.y);
@@ -54,35 +68,66 @@ export function cameraRelativeDirection(input: MoveInput, cameraYaw: number): Wo
   return { x: x / length, z: z / length };
 }
 
-export function computeMovementStep(
-  currentPos: [number, number, number],
-  input: MovementInput,
-  cameraYaw: number,
-  dt: number,
-): MovementVector {
-  const isMoving = Math.abs(input.forward) > 0.05 || Math.abs(input.turn) > 0.05;
-  const baseSpeed = input.sprint ? 9.6 : 4.8;
-  const speed = isMoving ? baseSpeed : 0;
+function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
 
-  let targetRotation = 0;
-  if (isMoving) {
-    const inputAngle = Math.atan2(input.turn, input.forward);
-    targetRotation = cameraYaw + inputAngle;
+function shortestAngleDelta(from: number, to: number): number {
+  let delta = (to - from) % (Math.PI * 2);
+  if (delta > Math.PI) delta -= Math.PI * 2;
+  if (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
+
+export function computeMovementStep(params: MovementStepParams): MovementStepResult {
+  const dt = Math.max(0, Math.min(finiteOr(params.deltaSeconds, 0), 0.1));
+  const pos = params.currentPosition;
+  const x = finiteOr(pos?.[0] as number, 0);
+  const y = finiteOr(pos?.[1] as number, GROUND_Y);
+  const z = finiteOr(pos?.[2] as number, 0);
+  const rotationY = finiteOr(params.currentRotationY, 0);
+  const speed = finiteOr(params.currentSpeed, 0);
+  const velocityY = finiteOr(params.velocityY, 0);
+
+  // The camera sits behind the player looking toward -Z, so camera yaw is 0.
+  // moveZ = -1 means "forward" (W / joystick up), which is world -Z.
+  const dir = cameraRelativeDirection(
+    { x: finiteOr(params.input.moveX, 0), y: -finiteOr(params.input.moveZ, 0) },
+    0,
+  );
+  const wantsMove = dir.x !== 0 || dir.z !== 0;
+
+  const targetSpeed = wantsMove ? (params.input.sprint ? SPRINT_SPEED : WALK_SPEED) : 0;
+  const speedEase = 1 - Math.exp(-12 * dt);
+  const nextSpeed = speed + (targetSpeed - speed) * speedEase;
+
+  // Avatar faces +Z by default, so turn toward atan2(x, z).
+  let nextRotationY = rotationY;
+  if (wantsMove) {
+    const targetRotation = Math.atan2(dir.x, dir.z);
+    nextRotationY = rotationY + shortestAngleDelta(rotationY, targetRotation) * (1 - Math.exp(-14 * dt));
   }
 
-  const moveX = Math.sin(targetRotation) * speed * dt;
-  const moveZ = Math.cos(targetRotation) * speed * dt;
+  const nextX = x + dir.x * nextSpeed * dt;
+  const nextZ = z + dir.z * nextSpeed * dt;
+
+  const onGround = y <= GROUND_Y + 0.001;
+  let nextVelocityY = velocityY;
+  if (onGround && params.input.jump) nextVelocityY = JUMP_VELOCITY;
+  else if (!onGround) nextVelocityY = velocityY - GRAVITY * dt;
+  else nextVelocityY = 0;
+
+  let nextY = y + nextVelocityY * dt;
+  if (nextY <= GROUND_Y) {
+    nextY = GROUND_Y;
+    if (nextVelocityY < 0) nextVelocityY = 0;
+  }
 
   return {
-    nextPosition: [
-      currentPos[0] + (isMoving ? moveX : 0),
-      currentPos[1],
-      currentPos[2] + (isMoving ? moveZ : 0),
-    ],
-    rotationY: targetRotation,
-    facingAngle: isMoving ? targetRotation : null,
-    isMoving,
-    speed,
-    currentSpeed: speed,
+    nextPosition: [nextX, nextY, nextZ],
+    nextRotationY,
+    nextSpeed,
+    nextVelocityY,
+    motion: Math.min(1.4, nextSpeed / WALK_SPEED),
   };
 }
