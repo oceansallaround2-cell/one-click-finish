@@ -166,15 +166,7 @@ function InstancedGrid({
 }) {
   const meshRef = useRef<InstancedMesh>(null);
     const material = useMemo(() => {
-    const params: MeshStandardMaterialParameters = { color };
-    if (roughness !== undefined) params.roughness = roughness;
-    if (metalness !== undefined) params.metalness = metalness;
-    if (emissiveIntensity !== undefined) params.emissiveIntensity = emissiveIntensity;
-    if (emissive) params.emissive = new Color(emissive);
-    return new MeshStandardMaterial(params);
-  }, [color, roughness, metalness, emissive, emissiveIntensity]);
-
-    const params: MeshStandardMaterialParameters = {
+        const params: MeshStandardMaterialParameters = {
       color,
       roughness,
       metalness,
@@ -185,7 +177,6 @@ function InstancedGrid({
     }
     return new MeshStandardMaterial(params);
   }, [color, roughness, metalness, emissive, emissiveIntensity]);
-
   useLayoutEffect(() => {
     if (!meshRef.current) return;
     setMatrices(meshRef.current);
