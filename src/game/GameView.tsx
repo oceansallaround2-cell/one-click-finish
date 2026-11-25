@@ -3,11 +3,11 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
   Compass,
+  Copy,
   Heart,
   MapPin,
-  Maximize2,
-  Menu,
   Sparkles,
+  Users,
   Volume2,
   VolumeX,
   Wifi,
@@ -21,10 +21,14 @@ import {
   clampJoystickInput,
   computeMovementStep,
   type MovementInput,
-  type MovementVector,
 } from "./sim/movement";
-
-export type CharacterId = "mira" | "leo";
+import {
+  createRoomCode,
+  normalizeRoomCode,
+  type CharacterId,
+  type RoomPlayerState,
+} from "./net/room";
+import { supabase } from "@/integrations/supabase/client";
 
 const STORAGE_KEY = "our_city_solo_save_v1";
 
@@ -72,15 +76,18 @@ function saveSoloProgress(data: Partial<SoloSaveData>) {
   }
 }
 
-// Interactive Discoverable Locations in Phase 1
+// Discovery Locations around the Tropical Island
 const DISCOVERY_HOTSPOTS = [
-  { id: "cafe", name: "Sunset Seaside Café", pos: [22, 10], radius: 6, desc: "Oceanfront deck with fresh mocktails and lofi chill beats." },
-  { id: "beach", name: "Golden Palms Boardwalk", pos: [0, 24], radius: 8, desc: "Soft coral sands, lounge chairs, and warm sunset breeze." },
-  { id: "plaza", name: "Central Clocktower Fountain", pos: [0, 0], radius: 7, desc: "The vibrant heart of the city with neon palm reflections." },
-  { id: "rooftop", name: "Skyline Helipad Vista", pos: [-24, -20], radius: 8, desc: "Panoramic view over the entire island archipelago." },
-  { id: "lookout", name: "South Jetty Pier", pos: [0, 48], radius: 6, desc: "Watch the sun dip below the infinite ocean horizon." },
+  { id: "cafe", name: "Sunset Seaside Café", pos: [22, 14] as const, radius: 8, desc: "Oceanfront deck with fresh drinks, lofi beats, and lounge seating." },
+  { id: "beach", name: "Golden Sands Boardwalk", pos: [0, 38] as const, radius: 9, desc: "Soft coral sands, lounge chairs, and warm tropical sunset breeze." },
+  { id: "pier", name: "Marina Pier & Yachts", pos: [0, 52] as const, radius: 8, desc: "Walk down the long jetty to watch the golden sun dip below the ocean." },
+  { id: "plaza", name: "Central Clocktower Fountain", pos: [0, -6] as const, radius: 8, desc: "The vibrant heart of the city with neon reflection pools." },
+  { id: "villa", name: "Luxury Rooftop Pool Villa", pos: [-20, -22] as const, radius: 9, desc: "Infinity pool overlooking the ocean archipelago." },
 ];
 
+// -------------------------------------------------------------
+// LOCAL PLAYER CONTROLLER
+// -------------------------------------------------------------
 interface PlayerControllerProps {
   character: CharacterId;
   inputRef: React.MutableRefObject<MovementInput>;
@@ -100,6 +107,7 @@ function PlayerController({
 }: PlayerControllerProps) {
   const { camera } = useThree();
   const avatarGroupRef = useRef<THREE.Group>(null);
+  const motionRef = useRef({ current: 0 });
 
   const playerPos = useRef<[number, number, number]>([...initialPosition]);
   const playerRotY = useRef<number>(initialRotation);
@@ -109,7 +117,7 @@ function PlayerController({
   const saveTimerRef = useRef<number>(0);
 
   const camTarget = useRef(new THREE.Vector3(...initialPosition));
-  const camPos = useRef(new THREE.Vector3(initialPosition[0], initialPosition[1] + 4, initialPosition[2] + 9));
+  const camPos = useRef(new THREE.Vector3(initialPosition[0], initialPosition[1] + 3.8, initialPosition[2] + 7.5));
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.08);
@@ -126,7 +134,7 @@ function PlayerController({
       dt,
     );
 
-    // Gravity & Ground Height Logic (Base ground is Y=0.0)
+    // Gravity & Ground Logic
     const baseGroundY = 0.0;
     if (input.jump && isGrounded.current) {
       verticalVelocity.current = 7.5;
@@ -145,10 +153,11 @@ function PlayerController({
       playerPos.current[1] = baseGroundY;
     }
 
-    // Island Boundaries: keep player on island (approx +/- 62 units)
-    playerPos.current[0] = Math.max(-62, Math.min(62, step.nextPosition[0]));
-    playerPos.current[2] = Math.max(-62, Math.min(62, step.nextPosition[2]));
+    // Island Boundaries: keep player on island
+    playerPos.current[0] = Math.max(-60, Math.min(60, step.nextPosition[0]));
+    playerPos.current[2] = Math.max(-60, Math.min(60, step.nextPosition[2]));
 
+    // Smooth character rotation towards movement angle
     if (step.facingAngle !== null) {
       let diff = step.facingAngle - playerRotY.current;
       while (diff < -Math.PI) diff += Math.PI * 2;
@@ -156,6 +165,7 @@ function PlayerController({
       playerRotY.current += diff * Math.min(1, dt * 14);
     }
 
+    // Update avatar mesh position & rotation
     if (avatarGroupRef.current) {
       avatarGroupRef.current.position.set(
         playerPos.current[0],
@@ -165,7 +175,14 @@ function PlayerController({
       avatarGroupRef.current.rotation.y = playerRotY.current;
     }
 
-    // Third-person Camera Follow
+    // Walking animation speed
+    motionRef.current.current = THREE.MathUtils.lerp(
+      motionRef.current.current,
+      step.isMoving ? (input.sprint ? 1.4 : 1.0) : 0,
+      dt * 10,
+    );
+
+    // Smooth Third-person Camera Follow
     const targetX = playerPos.current[0];
     const targetY = playerPos.current[1] + 1.45;
     const targetZ = playerPos.current[2];
@@ -174,8 +191,8 @@ function PlayerController({
     camTarget.current.y = THREE.MathUtils.lerp(camTarget.current.y, targetY, dt * 8);
     camTarget.current.z = THREE.MathUtils.lerp(camTarget.current.z, targetZ, dt * 10);
 
-    const camDistance = 7.2;
-    const camHeight = 3.6;
+    const camDistance = 6.8;
+    const camHeight = 3.4;
     const idealCamX = targetX - Math.sin(forwardAngleRef.current) * camDistance;
     const idealCamZ = targetZ - Math.cos(forwardAngleRef.current) * camDistance;
     const idealCamY = targetY + camHeight;
@@ -189,7 +206,7 @@ function PlayerController({
 
     onPositionUpdate(playerPos.current, playerRotY.current, step.currentSpeed);
 
-    // Proximity check to hotspots
+    // Check proximity to discovery hotspots
     let foundHotspot: string | null = null;
     for (const spot of DISCOVERY_HOTSPOTS) {
       const dx = playerPos.current[0] - spot.pos[0];
@@ -201,7 +218,7 @@ function PlayerController({
     }
     onNearHotspot(foundHotspot);
 
-    // Periodic Solo Auto-save (every ~3.5s)
+    // Auto-save progress locally every 3.5s
     saveTimerRef.current += dt;
     if (saveTimerRef.current >= 3.5) {
       saveTimerRef.current = 0;
@@ -214,24 +231,66 @@ function PlayerController({
   });
 
   return (
-  <group ref={avatarGroupRef}>
-    {/* Temporary visibility test */}
-    <mesh position={[0, 1, 0]}>
-      <capsuleGeometry args={[0.45, 1, 8, 16]} />
-      <meshBasicMaterial color="#ff00ff" />
-    </mesh>
-
-    <mesh position={[0, 2, 0]}>
-      <sphereGeometry args={[0.35, 16, 16]} />
-      <meshBasicMaterial color="#00ffff" />
-    </mesh>
-
-    <PlayerAvatar character={character} />
-  </group>
-);
+    <group ref={avatarGroupRef}>
+      <PlayerAvatar character={character} motion={motionRef} />
+    </group>
+  );
 }
 
-// Free orbit drag-to-look around character
+// -------------------------------------------------------------
+// REMOTE PARTNER AVATAR (2-PLAYER CO-OP)
+// -------------------------------------------------------------
+function RemotePartnerAvatar({ partner }: { partner: RoomPlayerState }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const motionRef = useRef({ current: 0 });
+  const lastPos = useRef<[number, number, number]>([...partner.position]);
+
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+    const dt = Math.min(delta, 0.1);
+
+    // Smooth position interpolation
+    groupRef.current.position.x = THREE.MathUtils.lerp(groupRef.current.position.x, partner.position[0], dt * 10);
+    groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, partner.position[1], dt * 10);
+    groupRef.current.position.z = THREE.MathUtils.lerp(groupRef.current.position.z, partner.position[2], dt * 10);
+
+    // Smooth rotation
+    let diff = partner.rotationY - groupRef.current.rotation.y;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    groupRef.current.rotation.y += diff * Math.min(1, dt * 10);
+
+    // Calculate whether partner is moving for walking animation
+    const dx = partner.position[0] - lastPos.current[0];
+    const dz = partner.position[2] - lastPos.current[2];
+    const isMoving = Math.hypot(dx, dz) > 0.02;
+    lastPos.current = [...partner.position];
+
+    motionRef.current.current = THREE.MathUtils.lerp(
+      motionRef.current.current,
+      isMoving ? 1.0 : 0,
+      dt * 8,
+    );
+  });
+
+  return (
+    <group ref={groupRef} position={partner.position} rotation={[0, partner.rotationY, 0]}>
+      {/* Ground marker indicator */}
+      <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.65, 0.8, 24]} />
+        <meshBasicMaterial
+          color={partner.character === "mira" ? "#f43f5e" : "#0ea5e9"}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <PlayerAvatar character={partner.character} motion={motionRef} />
+    </group>
+  );
+}
+
+// -------------------------------------------------------------
+// POINTER CAMERA ORBIT CONTROLLER
+// -------------------------------------------------------------
 function PointerLookController({ isEnabled }: { isEnabled: boolean }) {
   const { camera } = useThree();
   const draggingRef = useRef(false);
@@ -242,9 +301,14 @@ function PointerLookController({ isEnabled }: { isEnabled: boolean }) {
     if (!isEnabled) return;
 
     const handlePointerDown = (e: PointerEvent) => {
-      // Ignore if clicking UI buttons or joystick
       const target = e.target as HTMLElement | null;
-      if (target?.closest("button") || target?.closest(".game-joystick") || target?.closest(".game-overlay")) {
+      if (
+        target?.closest("button") ||
+        target?.closest(".game-joystick") ||
+        target?.closest(".game-topbar") ||
+        target?.closest(".game-minimap") ||
+        target?.closest("input")
+      ) {
         return;
       }
       draggingRef.current = true;
@@ -278,18 +342,32 @@ function PointerLookController({ isEnabled }: { isEnabled: boolean }) {
 
   return null;
 }
+
+// -------------------------------------------------------------
+// MAIN GAMEVIEW COMPONENT
+// -------------------------------------------------------------
 export function GameView() {
   const savedData = useMemo(() => loadSoloSave(), []);
+  const localPlayerId = useMemo(() => `p_${Math.random().toString(36).slice(2, 9)}`, []);
 
   const [activeChar, setActiveChar] = useState<CharacterId>(savedData?.character || "mira");
   const [mapOpen, setMapOpen] = useState(false);
+  const [coopModalOpen, setCoopModalOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   const [nearbyHotspot, setNearbyHotspot] = useState<string | null>(null);
   const [playerCoords, setPlayerCoords] = useState<[number, number, number]>(
     savedData?.position || [0, 0, 14],
   );
+  const [playerRotY, setPlayerRotY] = useState<number>(savedData?.rotationY || 0);
   const [playerSpeed, setPlayerSpeed] = useState<number>(0);
+
+  // 2-Player Co-op State
+  const [currentRoomCode, setCurrentRoomCode] = useState<string | null>(null);
+  const [roomInput, setRoomInput] = useState("");
+  const [coopStatus, setCoopStatus] = useState<string | null>(null);
+  const [partnerState, setPartnerState] = useState<RoomPlayerState | null>(null);
+  const broadcastTimerRef = useRef<number>(0);
 
   // Input State Refs
   const inputRef = useRef<MovementInput>({
@@ -317,7 +395,7 @@ export function GameView() {
     };
   }, []);
 
-  // Keyboard controls (WASD, Arrows, Space, Shift, E)
+  // Keyboard Controls
   useEffect(() => {
     const keysDown = new Set<string>();
 
@@ -356,7 +434,88 @@ export function GameView() {
     };
   }, []);
 
-  // Onscreen Touch Joystick Handlers
+  // -------------------------------------------------------------
+  // REAL-TIME 2-PLAYER SYNC VIA SUPABASE REALTIME
+  // -------------------------------------------------------------
+  useEffect(() => {
+    if (!currentRoomCode) {
+      setPartnerState(null);
+      return;
+    }
+
+    const channelName = `room_${currentRoomCode.toLowerCase()}`;
+    setCoopStatus(`Connecting to room ${currentRoomCode}...`);
+
+    const channel = supabase.channel(channelName, {
+      config: {
+        broadcast: { self: false },
+      },
+    });
+
+    channel
+      .on("broadcast", { event: "pos" }, (payload) => {
+        const data = payload["payload"] as {
+          id: string;
+          character: CharacterId;
+          x: number;
+          y: number;
+          z: number;
+          ry: number;
+        };
+
+        if (data && data.id !== localPlayerId) {
+          setPartnerState({
+            id: data.id,
+            name: data.character === "mira" ? "Mira" : "Leo",
+            character: data.character,
+            position: [data.x, data.y, data.z],
+            rotationY: data.ry,
+          });
+          setCoopStatus("Partner Connected!");
+        }
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setCoopStatus(`Room ${currentRoomCode} Active. Share code with partner!`);
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [currentRoomCode, localPlayerId]);
+
+  // Position broadcast loop to partner
+  const handlePositionUpdate = useCallback(
+    (pos: [number, number, number], rotY: number, speed: number) => {
+      setPlayerCoords(pos);
+      setPlayerRotY(rotY);
+      setPlayerSpeed(speed);
+
+      if (!currentRoomCode) return;
+
+      const now = performance.now();
+      if (now - broadcastTimerRef.current > 75) {
+        broadcastTimerRef.current = now;
+        const channelName = `room_${currentRoomCode.toLowerCase()}`;
+        void supabase.channel(channelName).send({
+          type: "broadcast",
+          event: "pos",
+          payload: {
+            id: localPlayerId,
+            character: activeChar,
+            x: Number(pos[0].toFixed(2)),
+            y: Number(pos[1].toFixed(2)),
+            z: Number(pos[2].toFixed(2)),
+            ry: Number(rotY.toFixed(3)),
+          },
+        });
+      }
+    },
+    [currentRoomCode, localPlayerId, activeChar],
+  );
+
+  // On-screen Touch Joystick Handlers
   const handleJoystickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     joystickActive.current = true;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -402,12 +561,45 @@ export function GameView() {
     saveSoloProgress({ character: char });
   };
 
+  const handleCreateRoom = () => {
+    const code = createRoomCode();
+    setCurrentRoomCode(code);
+    setCoopModalOpen(false);
+  };
+
+  const handleJoinRoom = () => {
+    const normalized = normalizeRoomCode(roomInput);
+    if (normalized) {
+      setCurrentRoomCode(normalized);
+      setCoopModalOpen(false);
+      setRoomInput("");
+    } else {
+      alert("Please enter a valid 4-letter room code (e.g. K7WP)");
+    }
+  };
+
+  const handleLeaveRoom = () => {
+    setCurrentRoomCode(null);
+    setPartnerState(null);
+    setCoopStatus(null);
+  };
+
   const handleResetProgress = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
       window.location.reload();
     }
   };
+
+  // Distance to partner
+  const partnerDistance = partnerState
+    ? Math.round(
+        Math.hypot(
+          playerCoords[0] - partnerState.position[0],
+          playerCoords[2] - partnerState.position[2],
+        ),
+      )
+    : null;
 
   return (
     <main className="our-city relative w-full h-[100dvh] overflow-hidden select-none bg-neutral-950 font-sans text-white">
@@ -422,41 +614,27 @@ export function GameView() {
           toneMappingExposure: 1.05,
         }}
       >
-        <PointerLookController isEnabled={!mapOpen} />
+        <PointerLookController isEnabled={!mapOpen && !coopModalOpen} />
 
-{/* Main lighting for the entire 3D world */}
-<color attach="background" args={["#f6b98b"]} />
+        {/* Sunset Lighting */}
+        <color attach="background" args={["#f6b98b"]} />
+        <ambientLight intensity={1.8} />
+        <hemisphereLight args={["#dceeff", "#8caa78", 1.4]} />
+        <directionalLight position={[35, 55, 25]} intensity={2.8} castShadow />
+        <pointLight position={[0, 15, 0]} intensity={1.8} distance={150} />
 
-<ambientLight intensity={2} />
+        <CityWorld />
 
-<hemisphereLight
-  args={["#dceeff", "#8caa78", 1.5]}
-/>
-
-<directionalLight
-  position={[30, 50, 20]}
-  intensity={3}
-  castShadow
-/>
-
-<pointLight
-  position={[0, 15, 0]}
-  intensity={2}
-  distance={150}
-/>
-
-<CityWorld />
         <PlayerController
           character={activeChar}
           inputRef={inputRef}
           initialPosition={savedData?.position || [0, 0, 14]}
           initialRotation={savedData?.rotationY || 0}
-          onPositionUpdate={(pos, _, speed) => {
-            setPlayerCoords(pos);
-            setPlayerSpeed(speed);
-          }}
+          onPositionUpdate={handlePositionUpdate}
           onNearHotspot={setNearbyHotspot}
         />
+
+        {partnerState && <RemotePartnerAvatar partner={partnerState} />}
       </Canvas>
 
       {/* Top HUD Bar */}
@@ -472,19 +650,18 @@ export function GameView() {
             </span>
           </div>
 
-          <div className="hidden sm:flex items-center gap-1.5 bg-neutral-900/70 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[11px] text-white/70">
-            {isOnline ? (
-              <>
-                <Wifi className="w-3 h-3 text-emerald-400" />
-                <span>Solo (Online)</span>
-              </>
+          <button
+            type="button"
+            onClick={() => setCoopModalOpen(true)}
+            className="hidden sm:flex items-center gap-1.5 bg-neutral-900/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-xs font-medium text-white shadow-lg pointer-events-auto hover:bg-neutral-800 transition-all"
+          >
+            <Users className="w-3.5 h-3.5 text-rose-400" />
+            {currentRoomCode ? (
+              <span className="text-emerald-300 font-mono font-bold">Room: {currentRoomCode}</span>
             ) : (
-              <>
-                <WifiOff className="w-3 h-3 text-amber-400" />
-                <span>Solo (Offline Ready)</span>
-              </>
+              <span>2-Player Co-op</span>
             )}
-          </div>
+          </button>
         </div>
 
         {/* Character Switcher & Quick Actions */}
@@ -536,6 +713,16 @@ export function GameView() {
         </div>
       </header>
 
+      {/* Partner Distance Indicator if Connected */}
+      {partnerState && partnerDistance !== null && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-rose-500/90 backdrop-blur-md px-4 py-1.5 rounded-full border border-rose-300/40 shadow-xl flex items-center gap-2 pointer-events-none z-20 animate-pulse">
+          <Heart className="w-3.5 h-3.5 text-white fill-white" />
+          <span className="text-xs font-bold text-white">
+            {partnerState.name}: {partnerDistance}m away
+          </span>
+        </div>
+      )}
+
       {/* Minimap (GTA Radar Style at bottom-left) */}
       <aside className="game-minimap absolute bottom-24 sm:bottom-6 left-3 w-32 h-32 rounded-2xl bg-neutral-950/85 backdrop-blur-md border border-white/15 overflow-hidden shadow-2xl pointer-events-auto z-20">
         <div className="relative w-full h-full flex items-center justify-center">
@@ -567,6 +754,22 @@ export function GameView() {
             );
           })}
 
+          {/* Partner Radar Blip */}
+          {partnerState && (
+            <div
+              style={{
+                transform: `translate(${Math.max(
+                  -50,
+                  Math.min(50, ((partnerState.position[0] - playerCoords[0]) / 70) * 45),
+                )}px, ${Math.max(
+                  -50,
+                  Math.min(50, ((partnerState.position[2] - playerCoords[2]) / 70) * 45),
+                )}px)`,
+              }}
+              className="absolute w-3 h-3 rounded-full bg-rose-400 ring-4 ring-rose-400/50 animate-ping"
+            />
+          )}
+
           {/* Center Player Pointer */}
           <div className="relative z-10 flex flex-col items-center">
             <div
@@ -593,7 +796,7 @@ export function GameView() {
         </div>
       )}
 
-      {/* On-screen Mobile Controls (Joystick & Action Buttons) */}
+      {/* On-screen Mobile Controls */}
       <div className="game-mobile-controls sm:hidden absolute bottom-5 left-3 right-3 flex items-end justify-between pointer-events-none z-20">
         {/* Joystick Base */}
         <div
@@ -611,8 +814,17 @@ export function GameView() {
           />
         </div>
 
-        {/* Action Buttons (Sprint & Jump) */}
+        {/* Action Buttons */}
         <div className="flex flex-col gap-2.5 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => setCoopModalOpen(true)}
+            className="w-14 h-14 rounded-full font-bold text-[10px] uppercase flex flex-col items-center justify-center shadow-xl border border-white/20 bg-neutral-900/80 backdrop-blur-md text-white active:bg-rose-500"
+          >
+            <Users className="w-4 h-4 text-rose-300 mb-0.5" />
+            Co-op
+          </button>
+
           <button
             type="button"
             onPointerDown={() => {
@@ -649,13 +861,93 @@ export function GameView() {
         </div>
       </div>
 
+      {/* 2-Player Co-op Modal */}
+      {coopModalOpen && (
+        <div className="fixed inset-0 bg-neutral-950/90 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-white/10 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setCoopModalOpen(false)}
+              className="absolute top-4 right-4 text-white hover:bg-white/10 rounded-full"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="w-6 h-6 text-rose-400" />
+              <h2 className="text-lg font-bold">2-Player Online Co-op</h2>
+            </div>
+
+            <p className="text-xs text-white/70 mb-6 leading-relaxed">
+              Play together in the same 3D tropical sunset city with your partner. One creates a room code, the other joins!
+            </p>
+
+            {currentRoomCode ? (
+              <div className="bg-black/40 border border-emerald-500/30 rounded-xl p-4 text-center mb-6">
+                <div className="text-xs text-white/60 uppercase tracking-wider mb-1">Your 4-Letter Room Code</div>
+                <div className="text-3xl font-mono font-extrabold text-amber-300 tracking-widest my-2">
+                  {currentRoomCode}
+                </div>
+                <div className="text-xs text-emerald-400 mt-2">{coopStatus}</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentRoomCode);
+                    alert("Room code copied to clipboard!");
+                  }}
+                  className="mt-3 text-xs gap-1 border-white/20"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Copy Code
+                </Button>
+                <div className="mt-4 pt-3 border-t border-white/10">
+                  <Button variant="destructive" size="sm" onClick={handleLeaveRoom} className="w-full text-xs">
+                    Leave Co-op Session
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Button
+                  onClick={handleCreateRoom}
+                  className="w-full bg-gradient-to-r from-rose-500 to-amber-500 text-white font-bold rounded-xl py-5"
+                >
+                  Create New Room (Host)
+                </Button>
+
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-white/10" />
+                  <span className="flex-shrink mx-4 text-xs text-white/40 uppercase">or join partner</span>
+                  <div className="flex-grow border-t border-white/10" />
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    maxLength={4}
+                    placeholder="CODE"
+                    value={roomInput}
+                    onChange={(e) => setRoomInput(e.target.value.toUpperCase())}
+                    className="flex-1 bg-black/50 border border-white/20 rounded-xl px-4 py-2 text-center font-mono font-bold text-lg uppercase placeholder:text-white/20 text-amber-300 focus:outline-none focus:border-amber-400"
+                  />
+                  <Button onClick={handleJoinRoom} className="bg-sky-500 hover:bg-sky-600 rounded-xl px-6">
+                    Join
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Full Map & Solo Progress Overlay Modal */}
       {mapOpen && (
         <div className="fixed inset-0 bg-neutral-950/90 backdrop-blur-xl z-50 flex flex-col p-4 sm:p-8 animate-in fade-in duration-200">
           <div className="flex items-center justify-between pb-4 border-b border-white/10">
             <div className="flex items-center gap-2">
               <MapPin className="w-5 h-5 text-amber-400" />
-              <h2 className="text-lg font-bold tracking-wide">Island Map & Expedition Guide</h2>
+              <h2 className="text-lg font-bold tracking-wide">Island Map & Solo Expedition Guide</h2>
             </div>
             <Button
               size="icon"
@@ -712,4 +1004,4 @@ export function GameView() {
       )}
     </main>
   );
-                }    
+}
