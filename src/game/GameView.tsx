@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
@@ -648,4 +647,421 @@ export function GameView() {
         character={character}
         onSwitchCharacter={handleSwitchCharacter}
         activeRoom={roomCode}
-        onOpenCoop={() => setCoopModalOpen(true
+        onOpenCoop={() => setCoopModalOpen(true)}
+        onOpenMap={() => setMapOpen(true)}
+        onOpenChat={() => {
+          setChatOpen(true);
+          setUnreadChatCount(0);
+        }}
+        unreadChatCount={unreadChatCount}
+        isNearCar={isNearCar}
+        isDrivingCar={isDrivingCar}
+        onToggleCar={handleToggleCar}
+        speedKmh={speedKmh}
+        hotspotNotice={hotspotNotice}
+        currentMission={currentMission}
+        missionDistanceMeters={missionDistMeters}
+        partnerDistanceMeters={partnerDistMeters}
+        policeDistanceMeters={policeDistMeters}
+        bustedBanner={bustedBanner}
+        bustedFine={bustedFine}
+        activeOutfitId={activeOutfitId}
+        ownedOutfitIds={ownedOutfitIds}
+        ownedWeaponIds={ownedWeaponIds}
+        onBuyOutfit={handleBuyOutfit}
+        onBuyWeapon={handleBuyWeapon}
+      />
+
+      {/* Mobile Touch Controls Overlay */}
+      <div className="pointer-events-none absolute inset-0 z-30 flex justify-between items-end p-4 pb-6">
+        {/* Virtual Joystick */}
+        <div
+          className="pointer-events-auto relative w-32 h-32 rounded-full bg-black/40 border border-white/20 backdrop-blur-md flex items-center justify-center touch-none shadow-xl"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-white/30 text-xs font-bold uppercase tracking-wider">
+            Move
+          </div>
+          <div
+            className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 to-rose-500 shadow-lg border border-white/60 transition-transform"
+            style={{
+              transform: `translate(${touchPos.x}px, ${touchPos.y}px)`,
+            }}
+          />
+        </div>
+
+        {/* Action Button Cluster */}
+        <div className="pointer-events-auto flex flex-col gap-3 items-end">
+          <div className="flex gap-2">
+            {/* Drive / Exit Car Button */}
+            {(isNearCar || isDrivingCar) && (
+              <button
+                type="button"
+                onClick={handleToggleCar}
+                className="w-13 h-13 rounded-full bg-sky-600 border border-sky-400 text-white font-black text-xs uppercase flex items-center justify-center backdrop-blur-md active:scale-95 shadow-xl animate-pulse"
+              >
+                {isDrivingCar ? "EXIT" : "DRIVE"}
+              </button>
+            )}
+
+            {/* Fire Button (When Weapon Equipped) */}
+            {currentWeapon.id !== "fists" && (
+              <button
+                type="button"
+                onClick={handleShoot}
+                className="w-13 h-13 rounded-full bg-rose-600 border border-rose-400 text-white font-black text-xs uppercase flex items-center justify-center backdrop-blur-md active:scale-95 shadow-xl"
+              >
+                FIRE
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSwitchCharacter}
+              className="w-13 h-13 rounded-full bg-slate-900/80 border border-white/20 text-white font-bold text-xs uppercase flex items-center justify-center backdrop-blur-md active:scale-95 shadow-lg"
+            >
+              {character === "mira" ? "Leo" : "Mira"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCycleWeapon}
+              className="w-13 h-13 rounded-full bg-slate-900/80 border border-white/20 text-amber-400 font-bold text-xs uppercase flex items-center justify-center backdrop-blur-md active:scale-95 shadow-lg"
+            >
+              GUN
+            </button>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onTouchStart={() => {
+                inputRef.current.sprint = true;
+                setSprintHeld(true);
+              }}
+              onTouchEnd={() => {
+                inputRef.current.sprint = false;
+                setSprintHeld(false);
+              }}
+              className={`w-16 h-16 rounded-full font-black text-sm uppercase flex items-center justify-center border shadow-xl backdrop-blur-md active:scale-95 ${
+                sprintHeld
+                  ? "bg-amber-500 text-black border-amber-300 ring-4 ring-amber-400/50"
+                  : "bg-slate-900/80 text-white border-white/30"
+              }`}
+            >
+              SPRINT
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                inputRef.current.jump = true;
+                setTimeout(() => {
+                  inputRef.current.jump = false;
+                }, 200);
+              }}
+              className="w-16 h-16 rounded-full bg-gradient-to-tr from-rose-600 to-amber-600 text-white font-black text-sm uppercase flex items-center justify-center border border-white/40 shadow-xl backdrop-blur-md active:scale-95"
+            >
+              JUMP
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 2-Player Co-op Chat Overlay */}
+      <CoopChat
+        isOpen={chatOpen}
+        onClose={() => setChatOpen(false)}
+        character={character}
+        activeRoom={roomCode}
+        messages={chatMessages}
+        onSendMessage={handleSendChatMessage}
+        unreadCount={unreadChatCount}
+        onOpen={() => {
+          setChatOpen(true);
+          setUnreadChatCount(0);
+        }}
+        lastMessage={lastChatMessage}
+      />
+
+      {/* 2-Player Co-op Room Modal */}
+      {coopModalOpen && (
+        <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="w-full max-w-md bg-neutral-900 border border-white/20 rounded-2xl p-6 text-white shadow-2xl relative">
+            <button
+              type="button"
+              onClick={() => setCoopModalOpen(false)}
+              className="absolute top-4 right-4 text-white/60 hover:text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="flex items-center gap-3 text-rose-400 mb-2">
+              <Users className="w-6 h-6" />
+              <h2 className="text-xl font-black uppercase tracking-wider">Two-Player Co-Op</h2>
+            </div>
+            <p className="text-sm text-neutral-300 mb-6">
+              Share the room code with your partner to explore Our City together in real-time.
+            </p>
+
+            {roomCode ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-black/50 border border-amber-400/30 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs uppercase text-amber-400 font-bold tracking-wider">
+                      Your Private Room Code
+                    </div>
+                    <div className="text-3xl font-black font-mono tracking-widest text-white mt-1">
+                      {roomCode}
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      void navigator.clipboard.writeText(roomCode);
+                      setCopyFeedback(true);
+                      setTimeout(() => setCopyFeedback(false), 2000);
+                    }}
+                    className="bg-amber-500 hover:bg-amber-600 text-black font-bold"
+                  >
+                    {copyFeedback ? "Copied!" : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+
+                <div className="text-xs text-emerald-400 font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {partnerState ? "Partner connected in city!" : "Waiting for partner to join..."}
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setRoomCode(null);
+                    setPartnerState(null);
+                  }}
+                  variant="outline"
+                  className="w-full border-red-500 text-red-400 hover:bg-red-500/20"
+                >
+                  Leave Room
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Button
+                  onClick={() => {
+                    const code = createRoomCode();
+                    setRoomCode(code);
+                  }}
+                  className="w-full bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold py-6 text-base shadow-lg"
+                >
+                  Create New Room
+                </Button>
+
+                <div className="relative flex items-center justify-center my-4">
+                  <div className="absolute inset-0 flex items-center -z-10">
+                    <div className="w-full border-t border-white/20" />
+                  </div>
+                  <span className="bg-neutral-900 px-3 text-xs uppercase tracking-wider text-neutral-400">
+                    or join partner
+                  </span>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={roomInput}
+                    onChange={(e) => setRoomInput(e.target.value.toUpperCase())}
+                    placeholder="ENTER 4-LETTER CODE"
+                    className="flex-1 bg-black/60 border border-white/20 rounded-xl px-4 text-center font-mono font-black text-lg text-white uppercase focus:border-amber-400 outline-none"
+                  />
+                  <Button
+                    onClick={() => {
+                      const normalized = normalizeRoomCode(roomInput);
+                      if (normalized) {
+                        setRoomCode(normalized);
+                        setRoomInput("");
+                      }
+                    }}
+                    disabled={!normalizeRoomCode(roomInput)}
+                    className="bg-amber-500 hover:bg-amber-600 text-black font-bold px-6"
+                  >
+                    Join
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Full Screen GPS Map Overlay */}
+      {mapOpen && (
+        <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md text-white">
+          <div className="relative w-full max-w-2xl bg-zinc-900 border border-white/20 rounded-2xl p-6 shadow-2xl flex flex-col h-[85vh]">
+            <div className="flex items-center justify-between border-b border-white/15 pb-4">
+              <div className="flex items-center gap-3">
+                <Navigation className="w-6 h-6 text-amber-400" />
+                <h2 className="text-xl font-black uppercase tracking-wider">Satellite GPS Radar</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMapOpen(false)}
+                className="text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="flex-1 my-6 flex items-center justify-center">
+              <div className="relative w-full max-w-lg aspect-square rounded-2xl bg-neutral-900 border-2 border-white/20 overflow-hidden shadow-2xl flex items-center justify-center">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.15)_0,transparent_70%)]" />
+
+                {/* Grid Lines */}
+                <div className="absolute inset-0 grid grid-cols-4 grid-rows-4 border border-white/5 pointer-events-none">
+                  {Array.from({ length: 16 }).map((_, i) => (
+                    <div key={i} className="border border-white/5" />
+                  ))}
+                </div>
+
+                {/* You */}
+                <div
+                  className="absolute w-4 h-4 rounded-full bg-emerald-400 border-2 border-white shadow-[0_0_12px_rgba(52,211,153,1)] transform -translate-x-1/2 -translate-y-1/2 z-30"
+                  style={{
+                    left: `${50 + (position[0] / 80) * 40}%`,
+                    top: `${50 + (position[2] / 80) * 40}%`,
+                  }}
+                />
+
+                {/* Partner in Co-op */}
+                {partnerState && (
+                  <div
+                    className="absolute w-4 h-4 rounded-full bg-pink-500 border-2 border-white shadow-[0_0_12px_rgba(236,72,153,1)] transform -translate-x-1/2 -translate-y-1/2 z-30 animate-pulse"
+                    style={{
+                      left: `${50 + (partnerState.position[0] / 80) * 40}%`,
+                      top: `${50 + (partnerState.position[2] / 80) * 40}%`,
+                    }}
+                  />
+                )}
+
+                {/* Police Cruiser */}
+                {wantedLevel > 0 && (
+                  <div
+                    className="absolute w-4 h-4 rounded-full bg-red-600 border-2 border-white shadow-[0_0_14px_rgba(239,68,68,1)] transform -translate-x-1/2 -translate-y-1/2 z-30 animate-ping"
+                    style={{
+                      left: `${50 + (policePosRef.current[0] / 80) * 40}%`,
+                      top: `${50 + (policePosRef.current[2] / 80) * 40}%`,
+                    }}
+                  />
+                )}
+
+                {/* Sports Car */}
+                <div
+                  className="absolute w-3 h-3 rounded-full bg-sky-400 border border-white shadow-[0_0_8px_rgba(56,189,248,1)] transform -translate-x-1/2 -translate-y-1/2 z-20"
+                  style={{
+                    left: `${50 + (carPosRef.current[0] / 80) * 40}%`,
+                    top: `${50 + (carPosRef.current[2] / 80) * 40}%`,
+                  }}
+                />
+
+                {/* Mission Objective */}
+                <div
+                  className="absolute w-4 h-4 rounded-full bg-amber-400 border-2 border-white shadow-[0_0_12px_rgba(251,191,36,1)] transform -translate-x-1/2 -translate-y-1/2 z-20 animate-bounce"
+                  style={{
+                    left: `${50 + (currentMission.targetPos[0] / 80) * 40}%`,
+                    top: `${50 + (currentMission.targetPos[2] / 80) * 40}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-around gap-4 bg-white/5 p-4 rounded-xl border border-white/10 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-emerald-400" />
+                <span>You</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-pink-500" />
+                <span>Partner (💖)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-amber-400" />
+                <span>Mission Objective</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-sky-400" />
+                <span>Sports Car</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-red-600" />
+                <span>Police Pursuit</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function ScenePhysicsLoop({
+  inputRef,
+  position,
+  setPosition,
+  setRotationY,
+  setSpeedKmh,
+  motionAnimRef,
+  isDrivingCar,
+}: {
+  inputRef: React.MutableRefObject<MovementInput>;
+  position: [number, number, number];
+  setPosition: React.Dispatch<React.SetStateAction<[number, number, number]>>;
+  setRotationY: React.Dispatch<React.SetStateAction<number>>;
+  motionAnimRef: React.MutableRefObject<number>;
+  setSpeedKmh: React.Dispatch<React.SetStateAction<number>>;
+  isDrivingCar: boolean;
+}) {
+  const currentPos = useRef<[number, number, number]>(position);
+  currentPos.current = position;
+
+  const currentRotY = useRef(0);
+  const currentSpeed = useRef(0);
+  const currentVelocityY = useRef(0);
+
+  useFrame((_, delta) => {
+    const dt = Math.min(delta, 0.1);
+    const step = computeMovementStep({
+      currentPosition: currentPos.current,
+      currentRotationY: currentRotY.current,
+      currentSpeed: currentSpeed.current,
+      velocityY: currentVelocityY.current,
+      input: inputRef.current,
+      deltaSeconds: dt,
+    });
+
+    const speedMultiplier = isDrivingCar ? 2.4 : 1;
+    const finalSpeed = step.nextSpeed * speedMultiplier;
+
+    currentRotY.current = step.nextRotationY;
+    currentSpeed.current = step.nextSpeed;
+    currentVelocityY.current = step.nextVelocityY;
+
+    if (isDrivingCar && (inputRef.current.moveX !== 0 || inputRef.current.moveZ !== 0)) {
+      const forwardX = Math.sin(step.nextRotationY) * finalSpeed * dt;
+      const forwardZ = Math.cos(step.nextRotationY) * finalSpeed * dt;
+      setPosition([
+        currentPos.current[0] + forwardX,
+        step.nextPosition[1],
+        currentPos.current[2] + forwardZ,
+      ]);
+    } else {
+      setPosition(step.nextPosition);
+    }
+
+    setRotationY(step.nextRotationY);
+    setSpeedKmh(Math.round(finalSpeed * 3.6));
+    motionAnimRef.current = step.motion;
+  });
+
+  return null;
+}
