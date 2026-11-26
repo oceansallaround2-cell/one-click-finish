@@ -9,7 +9,9 @@ import {
   ShieldAlert,
   Coins,
   X,
-  Check,
+  MessageSquare,
+  Car,
+  Crosshair,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -100,6 +102,11 @@ interface GtaHudProps {
   activeRoom: string | null;
   onOpenCoop: () => void;
   onOpenMap: () => void;
+  onOpenChat: () => void;
+  unreadChatCount: number;
+  isNearCar: boolean;
+  isDrivingCar: boolean;
+  onToggleCar: () => void;
   speedKmh: number;
   hotspotNotice: string | null;
   currentMission: MissionInfo;
@@ -127,6 +134,11 @@ export function GtaHud({
   activeRoom,
   onOpenCoop,
   onOpenMap,
+  onOpenChat,
+  unreadChatCount,
+  isNearCar,
+  isDrivingCar,
+  onToggleCar,
   speedKmh,
   hotspotNotice,
   currentMission,
@@ -144,7 +156,6 @@ export function GtaHud({
   const [shopOpen, setShopOpen] = useState(false);
   const [shopTab, setShopTab] = useState<"outfits" | "weapons">("outfits");
 
-  // Format cash as $00024873 matching your screenshot
   const formattedCash = `$${Math.max(0, Math.floor(cash)).toString().padStart(8, "0")}`;
 
   return (
@@ -158,17 +169,18 @@ export function GtaHud({
           <div className="mt-4 text-white text-lg sm:text-xl font-bold tracking-wider">
             You were apprehended by the Vice Patrol
           </div>
-          {bustedFine > 0 && (
-            <div className="mt-2 text-red-400 font-mono text-2xl font-black">
-              -${bustedFine} Bail Fine Confiscated
-            </div>
-          )}
+          <div className="mt-2 text-red-400 font-mono text-base font-bold">
+            Bail paid: -${bustedFine}
+          </div>
+          <div className="mt-6 text-neutral-400 text-xs uppercase tracking-widest">
+            Respawning at Villa Sanctuary...
+          </div>
         </div>
       )}
 
-      {/* Top Header */}
+      {/* TOP HEADER ROW */}
       <div className="flex items-start justify-between gap-2">
-        {/* Top Left: Game Badge, Co-op Room & Shop Button */}
+        {/* Top Left: Game Badge, Co-op Room, Chat & Shop Buttons */}
         <div className="flex flex-col gap-1.5 pointer-events-auto">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 shadow-lg">
@@ -188,6 +200,25 @@ export function GtaHud({
             >
               <Users className="w-3.5 h-3.5 mr-1.5" />
               {activeRoom ? `Room: ${activeRoom}` : "2P Co-op"}
+            </Button>
+
+            {/* 2P Chat Button */}
+            <Button
+              size="sm"
+              onClick={onOpenChat}
+              className={`h-8 px-3 rounded-xl text-xs font-bold transition-all shadow-lg relative ${
+                unreadChatCount > 0
+                  ? "bg-rose-600 text-white hover:bg-rose-500 animate-pulse border border-rose-400"
+                  : "bg-black/80 text-white/90 hover:bg-white/10 border border-white/10"
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+              Chat
+              {unreadChatCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.2 bg-white text-rose-600 text-[10px] font-black rounded-full">
+                  {unreadChatCount}
+                </span>
+              )}
             </Button>
 
             {/* GTA Shop / Wardrobe Button */}
@@ -212,6 +243,23 @@ export function GtaHud({
             </div>
           </div>
 
+          {/* Car Driving / Near Car Prompt */}
+          {(isNearCar || isDrivingCar) && (
+            <div className="bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-sky-400/50 shadow-lg flex items-center gap-2 text-xs text-sky-200">
+              <Car className="w-4 h-4 text-sky-400 animate-bounce" />
+              <span>
+                {isDrivingCar ? "Driving Convertible • Tap Exit Car to leave" : "Sports Car nearby • Tap Drive"}
+              </span>
+              <button
+                type="button"
+                onClick={onToggleCar}
+                className="ml-1 px-2.5 py-0.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-black font-extrabold uppercase text-[10px]"
+              >
+                {isDrivingCar ? "Exit Car" : "Drive"}
+              </button>
+            </div>
+          )}
+
           {hotspotNotice && (
             <div className="bg-amber-500/90 text-black font-extrabold text-xs px-3 py-1 rounded-lg shadow-md animate-bounce flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5" />
@@ -229,16 +277,16 @@ export function GtaHud({
             </span>
           </div>
 
-          {/* 5-Star Wanted Level Bar */}
-          <div className="flex items-center gap-0.5 bg-black/75 px-2.5 py-1 rounded-lg border border-white/10 shadow-md">
-            {[1, 2, 3, 4, 5].map((starIndex) => {
-              const isFilled = starIndex <= wantedLevel;
+          {/* Wanted Level Stars (5 Stars) */}
+          <div className="bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 flex items-center gap-1 shadow-lg">
+            {[1, 2, 3, 4, 5].map((starNum) => {
+              const active = starNum <= wantedLevel;
               return (
                 <Star
-                  key={starIndex}
-                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
-                    isFilled
-                      ? "text-amber-400 fill-amber-400 animate-pulse filter drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]"
+                  key={starNum}
+                  className={`w-4 h-4 transition-all duration-300 ${
+                    active
+                      ? "text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-110"
                       : "text-white/20"
                   }`}
                 />
@@ -246,61 +294,49 @@ export function GtaHud({
             })}
           </div>
 
-          {/* Weapon Box with Ammo (e.g. Pistol 17 / 93) */}
-          <button
-            type="button"
+          {/* Weapon Slot & Ammo Counter */}
+          <div
             onClick={onCycleWeapon}
-            className="bg-black/85 hover:bg-black/95 transition px-3 py-1.5 rounded-xl border border-white/15 shadow-lg flex items-center gap-2.5 cursor-pointer"
+            className="cursor-pointer bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 hover:border-amber-400/50 shadow-xl flex items-center gap-2.5 active:scale-95 transition"
           >
-            <div className="text-right">
-              <div className="text-[10px] uppercase font-bold tracking-wider text-white/60">
+            <div className="flex flex-col items-end">
+              <span className="text-[11px] font-black uppercase text-amber-400 tracking-wider">
                 {currentWeapon.name}
-              </div>
-              <div className="text-xs font-mono font-bold text-amber-300">
-                {currentWeapon.id === "fists" ? "MELEE" : `${currentWeapon.ammo} / ${currentWeapon.reserve}`}
-              </div>
+              </span>
+              {currentWeapon.ammo > 0 && (
+                <span className="font-mono text-xs font-bold text-white tracking-widest">
+                  {currentWeapon.ammo} / {currentWeapon.reserve}
+                </span>
+              )}
             </div>
-            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white/90 text-sm font-bold border border-white/10">
-              {currentWeapon.id === "pistol" ? "🔫" : currentWeapon.id === "smg" ? "⚡" : currentWeapon.id === "shotgun" ? "💥" : "👊"}
-            </div>
-          </button>
-
-          {/* Health & Armor Bars */}
-          <div className="w-28 sm:w-32 flex flex-col gap-1 bg-black/70 p-1.5 rounded-lg border border-white/10">
-            <div className="w-full bg-white/15 h-2 rounded-full overflow-hidden flex">
-              <div
-                className="bg-sky-400 h-full transition-all duration-300 rounded-full"
-                style={{ width: `${Math.min(100, Math.max(0, armor))}%` }}
-              />
-            </div>
-            <div className="w-full bg-white/15 h-2 rounded-full overflow-hidden flex">
-              <div
-                className="bg-emerald-500 h-full transition-all duration-300 rounded-full"
-                style={{ width: `${Math.min(100, Math.max(0, health))}%` }}
-              />
+            <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-white/10 flex items-center justify-center text-white/80">
+              <Crosshair className="w-4 h-4 text-amber-400" />
             </div>
           </div>
 
-          {/* Character Quick Switcher */}
-          <button
-            type="button"
-            onClick={onSwitchCharacter}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition shadow-md border ${
-              character === "mira"
-                ? "bg-rose-600/90 hover:bg-rose-500 text-white border-rose-400/40"
-                : "bg-sky-600/90 hover:bg-sky-500 text-white border-sky-400/40"
-            }`}
-          >
-            {character === "mira" ? "👗 Mira (Tap for Leo)" : "🧥 Leo (Tap for Mira)"}
-          </button>
+          {/* Health & Armor Bars */}
+          <div className="flex flex-col gap-1 w-28 bg-black/80 backdrop-blur-md p-1.5 rounded-lg border border-white/10">
+            <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-emerald-500 h-full rounded-full transition-all duration-300 shadow-[0_0_6px_rgba(16,185,129,0.8)]"
+                style={{ width: `${health}%` }}
+              />
+            </div>
+            <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-sky-500 h-full rounded-full transition-all duration-300 shadow-[0_0_6px_rgba(14,165,233,0.8)]"
+                style={{ width: `${armor}%` }}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Bottom Center: Speedometer & Radar Distances */}
+      {/* BOTTOM CENTER: Speedometer & Radar Distances */}
       <div className="self-center flex flex-col items-center gap-1">
         {speedKmh > 0.5 && (
-          <div className="bg-black/75 backdrop-blur-md px-3 py-1 rounded-full border border-white/15 text-xs font-mono font-bold text-white/90">
-            {speedKmh.toFixed(0)} KM/H
+          <div className="bg-black/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-white/15 text-xs font-mono font-bold text-white/90 shadow-md">
+            {isDrivingCar ? `🚗 ${speedKmh} KM/H` : `${speedKmh} KM/H`}
           </div>
         )}
 
@@ -339,13 +375,11 @@ export function GtaHud({
               </button>
             </div>
 
-            {/* Cash Balance Display */}
             <div className="bg-black/60 px-4 py-2 rounded-xl border border-emerald-500/30 flex items-center justify-between">
               <span className="text-xs text-white/60 font-bold uppercase tracking-wider">Your Funds:</span>
               <span className="font-mono text-emerald-400 font-black text-xl">{formattedCash}</span>
             </div>
 
-            {/* Category Tabs */}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -465,6 +499,4 @@ export function GtaHud({
       )}
     </div>
   );
-          }
-                  
-                      
+}
