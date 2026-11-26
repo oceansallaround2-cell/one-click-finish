@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from "react";
+import React, { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -102,7 +102,11 @@ export function GtaCityFeatures({
   const policeCarRef = useRef<THREE.Group>(null);
   const redLightRef = useRef<THREE.PointLight>(null);
   const blueLightRef = useRef<THREE.PointLight>(null);
-  const coinsGroupRef = useRef<THREE.Group>(null);
+  const collectedCoinIdsRef = useRef(new Set<number>(collectedCoinIds));
+
+  React.useEffect(() => {
+    collectedCoinIds.forEach((coinId) => collectedCoinIdsRef.current.add(coinId));
+  }, [collectedCoinIds]);
 
   // Police cruiser position & angle state
   const policeState = useRef({
@@ -114,25 +118,17 @@ export function GtaCityFeatures({
 
   useFrame(({ clock }, delta) => {
     // 1. Animate spinning coins and check pickup
-    if (coinsGroupRef.current) {
-      const time = clock.elapsedTime;
-      coinsGroupRef.current.children.forEach((coinMesh, idx) => {
-        if (!collectedCoinIds.includes(idx)) {
-          coinMesh.rotation.y += delta * 2.5;
-          const origY = INITIAL_COIN_LOCATIONS[idx]?.[1] ?? 0.6;
-          coinMesh.position.y = origY + Math.sin(time * 3 + idx) * 0.12;
-
-          // Check player distance to coin
-          const dx = playerPos[0] - coinMesh.position.x;
-          const dz = playerPos[2] - coinMesh.position.z;
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist < 1.6) {
-            playGtaCoinChime();
-            onCollectCoin(idx, 50);
-          }
-        }
-      });
-    }
+    const time = clock.elapsedTime;
+    INITIAL_COIN_LOCATIONS.forEach((coinPos, idx) => {
+      if (collectedCoinIdsRef.current.has(idx)) return;
+      const dx = playerPos[0] - coinPos[0];
+      const dz = playerPos[2] - coinPos[2];
+      if (Math.hypot(dx, dz) < 1.6) {
+        collectedCoinIdsRef.current.add(idx);
+        playGtaCoinChime();
+        onCollectCoin(idx, 50);
+      }
+    });
 
     // 2. Police Cruiser Siren Strobe Lights
     if (wantedLevel > 0) {
@@ -187,11 +183,12 @@ export function GtaCityFeatures({
   return (
     <group>
       {/* 3D Gold Coins */}
-      <group ref={coinsGroupRef}>
+      <group>
         {INITIAL_COIN_LOCATIONS.map((pos, idx) => {
           if (collectedCoinIds.includes(idx)) return null;
           return (
             <mesh key={idx} position={pos} rotation={[0, 0, Math.PI / 2]} castShadow>
+              <CoinSpin time={time} index={idx} />
               <cylinderGeometry args={[0.38, 0.38, 0.08, 16]} />
               <meshStandardMaterial
                 color="#f59e0b"
@@ -259,4 +256,14 @@ export function GtaCityFeatures({
     </group>
   );
   }
+
+function CoinSpin({ time, index }: { time: number; index: number }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    meshRef.current.rotation.y += delta * 2.5;
+    meshRef.current.position.y = 0.6 + Math.sin(time * 3 + index) * 0.12;
+  });
+  return <mesh ref={meshRef} />;
+}
         
