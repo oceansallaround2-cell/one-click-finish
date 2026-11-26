@@ -20,7 +20,9 @@ export const INITIAL_COIN_LOCATIONS: [number, number, number][] = [
 // Synthesized audio using Web Audio API (zero external sound files needed)
 export function playGtaCoinChime() {
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new AudioCtx();
     if (ctx.state === "suspended") void ctx.resume();
     const now = ctx.currentTime;
@@ -57,7 +59,9 @@ export function playGtaCoinChime() {
 
 export function playBustedSiren() {
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new AudioCtx();
     if (ctx.state === "suspended") void ctx.resume();
     const now = ctx.currentTime;
@@ -80,6 +84,37 @@ export function playBustedSiren() {
   } catch {
     // Ignore audio permission blocks
   }
+}
+
+// Individual animated coin
+function SingleCoin({
+  position,
+  index,
+}: {
+  position: [number, number, number];
+  index: number;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  useFrame(({ clock }, delta) => {
+    if (!meshRef.current) return;
+    meshRef.current.rotation.z += delta * 2.5;
+    meshRef.current.position.y =
+      position[1] + Math.sin(clock.elapsedTime * 3 + index) * 0.12;
+  });
+
+  return (
+    <mesh ref={meshRef} position={position} rotation={[0, 0, Math.PI / 2]} castShadow>
+      <cylinderGeometry args={[0.38, 0.38, 0.08, 16]} />
+      <meshStandardMaterial
+        color="#f59e0b"
+        roughness={0.2}
+        metalness={0.9}
+        emissive="#d97706"
+        emissiveIntensity={0.4}
+      />
+    </mesh>
+  );
 }
 
 interface GtaCityFeaturesProps {
@@ -117,8 +152,7 @@ export function GtaCityFeatures({
   });
 
   useFrame(({ clock }, delta) => {
-    // 1. Animate spinning coins and check pickup
-    const time = clock.elapsedTime;
+    // Check coin proximity pickup
     INITIAL_COIN_LOCATIONS.forEach((coinPos, idx) => {
       if (collectedCoinIdsRef.current.has(idx)) return;
       const dx = playerPos[0] - coinPos[0];
@@ -130,25 +164,23 @@ export function GtaCityFeatures({
       }
     });
 
-    // 2. Police Cruiser Siren Strobe Lights
+    // Police Cruiser Siren Strobe Lights
     if (wantedLevel > 0) {
       const strobe = Math.sin(clock.elapsedTime * 15) > 0;
       if (redLightRef.current) redLightRef.current.intensity = strobe ? 8 : 0.2;
       if (blueLightRef.current) blueLightRef.current.intensity = strobe ? 0.2 : 8;
 
-      // 3. Police Chase AI: steer towards player
+      // Police Chase AI: steer towards player
       const dx = playerPos[0] - policeState.current.x;
       const dz = playerPos[2] - policeState.current.z;
       const distToPlayer = Math.sqrt(dx * dx + dz * dz);
 
-      // Desired angle towards player
       const targetAngle = Math.atan2(dx, dz);
       let angleDiff = targetAngle - policeState.current.angle;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
       policeState.current.angle += angleDiff * Math.min(1, delta * 3.5);
 
-      // Chase speed scales with wanted level
       const maxSpeed = 5.5 + wantedLevel * 1.5;
       policeState.current.speed = Math.min(maxSpeed, policeState.current.speed + delta * 5);
       policeState.current.x += Math.sin(policeState.current.angle) * policeState.current.speed * delta;
@@ -158,13 +190,11 @@ export function GtaCityFeatures({
       if (distToPlayer < 2.5) {
         playBustedSiren();
         onBusted();
-        // Reset police back to station post-bust
         policeState.current.x = 25;
         policeState.current.z = 35;
         policeState.current.speed = 0;
       }
     } else {
-      // Passive idle patrol
       if (redLightRef.current) redLightRef.current.intensity = 0;
       if (blueLightRef.current) blueLightRef.current.intensity = 0;
       policeState.current.speed = 0;
@@ -186,25 +216,13 @@ export function GtaCityFeatures({
       <group>
         {INITIAL_COIN_LOCATIONS.map((pos, idx) => {
           if (collectedCoinIds.includes(idx)) return null;
-          return (
-            <mesh key={idx} position={pos} rotation={[0, 0, Math.PI / 2]} castShadow>
-              <CoinSpin time={time} index={idx} />
-              <cylinderGeometry args={[0.38, 0.38, 0.08, 16]} />
-              <meshStandardMaterial
-                color="#f59e0b"
-                roughness={0.2}
-                metalness={0.9}
-                emissive="#d97706"
-                emissiveIntensity={0.4}
-              />
-            </mesh>
-          );
+          return <SingleCoin key={idx} position={pos} index={idx} />;
         })}
       </group>
 
       {/* 3D Police Cruiser */}
       <group ref={policeCarRef} position={[18, 0.35, 22]}>
-        {/* Main Body (Black & White Cruiser) */}
+        {/* Main Body */}
         <mesh position={[0, 0.35, 0]} castShadow>
           <boxGeometry args={[1.8, 0.6, 3.8]} />
           <meshStandardMaterial color="#0f172a" roughness={0.3} metalness={0.5} />
@@ -227,15 +245,35 @@ export function GtaCityFeatures({
         {/* Red Strobe Dome */}
         <mesh position={[-0.35, 1.18, -0.2]}>
           <boxGeometry args={[0.3, 0.12, 0.2]} />
-          <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={wantedLevel > 0 ? 3 : 0.2} />
+          <meshStandardMaterial
+            color="#ef4444"
+            emissive="#ef4444"
+            emissiveIntensity={wantedLevel > 0 ? 3 : 0.2}
+          />
         </mesh>
-        <pointLight ref={redLightRef} position={[-0.4, 1.3, -0.2]} color="#ef4444" distance={15} intensity={0} />
+        <pointLight
+          ref={redLightRef}
+          position={[-0.4, 1.3, -0.2]}
+          color="#ef4444"
+          distance={15}
+          intensity={0}
+        />
         {/* Blue Strobe Dome */}
         <mesh position={[0.35, 1.18, -0.2]}>
           <boxGeometry args={[0.3, 0.12, 0.2]} />
-          <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={wantedLevel > 0 ? 3 : 0.2} />
+          <meshStandardMaterial
+            color="#3b82f6"
+            emissive="#3b82f6"
+            emissiveIntensity={wantedLevel > 0 ? 3 : 0.2}
+          />
         </mesh>
-        <pointLight ref={blueLightRef} position={[0.4, 1.3, -0.2]} color="#3b82f6" distance={15} intensity={0} />
+        <pointLight
+          ref={blueLightRef}
+          position={[0.4, 1.3, -0.2]}
+          color="#3b82f6"
+          distance={15}
+          intensity={0}
+        />
         {/* Headlights */}
         <mesh position={[-0.6, 0.35, 1.92]}>
           <sphereGeometry args={[0.15, 8, 8]} />
@@ -246,7 +284,12 @@ export function GtaCityFeatures({
           <meshStandardMaterial color="#fef08a" emissive="#fef08a" emissiveIntensity={1.5} />
         </mesh>
         {/* 4 Wheels */}
-        {[[-0.95, 0.05, 1.1], [0.95, 0.05, 1.1], [-0.95, 0.05, -1.1], [0.95, 0.05, -1.1]].map((wp, i) => (
+        {[
+          [-0.95, 0.05, 1.1],
+          [0.95, 0.05, 1.1],
+          [-0.95, 0.05, -1.1],
+          [0.95, 0.05, -1.1],
+        ].map((wp, i) => (
           <mesh key={i} position={wp as [number, number, number]} rotation={[0, 0, Math.PI / 2]}>
             <cylinderGeometry args={[0.35, 0.35, 0.22, 16]} />
             <meshStandardMaterial color="#1e293b" roughness={0.8} />
@@ -255,15 +298,4 @@ export function GtaCityFeatures({
       </group>
     </group>
   );
-  }
-
-function CoinSpin({ time, index }: { time: number; index: number }) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  useFrame((_, delta) => {
-    if (!meshRef.current) return;
-    meshRef.current.rotation.y += delta * 2.5;
-    meshRef.current.position.y = 0.6 + Math.sin(time * 3 + index) * 0.12;
-  });
-  return <mesh ref={meshRef} />;
 }
-        
