@@ -131,3 +131,11 @@ export function computeMovementStep(params: MovementStepParams): MovementStepRes
     motion: Math.min(1.4, nextSpeed / WALK_SPEED),
   };
 }
+export function createInitialMovementInput(): MovementInput {
+  return {
+    moveX: 0,
+    moveZ: 0,
+    sprint: false,
+    jump: false,
+  };
+}
