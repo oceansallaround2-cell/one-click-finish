@@ -413,8 +413,8 @@ export function GameView() {
       event: "player_move",
       payload,
     });
-  }, [position, rotationY, roomCode, character]);
-
+  }, [position, rotationY, roomCode, character, wantedLevel, activeMissionIdx, outfit, currentWeapon]);
+  
   // Keyboard controls
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
