@@ -388,14 +388,13 @@ export function GameView() {
       setPartnerState(null);
     };
   }, [roomCode, character]);
-
   // Broadcast player movement to partner in room
   useEffect(() => {
     if (!roomCode) return;
     const channelName = `our_city_room_${roomCode}`;
     const channel = supabase.channel(channelName);
 
-        const payload: RoomPlayerState = {
+    const payload: RoomPlayerState = {
       id: character,
       name: character === "mira" ? "Mira" : "Leo",
       character,
@@ -403,9 +402,9 @@ export function GameView() {
       rotationY,
       wantedLevel,
       activity: wantedLevel > 0 ? "wanted" : "walking",
-      missionIndex: activeMissionIdx,
-      activeOutfitId: outfit,
-      activeWeaponId: currentWeapon,
+      missionIndex,
+      activeOutfitId,
+      activeWeaponId,
     };
     
     void channel.send({
@@ -413,7 +412,7 @@ export function GameView() {
       event: "player_move",
       payload,
     });
-  }, [position, rotationY, roomCode, character, wantedLevel, activeMissionIdx, outfit, currentWeapon]);
+  }, [position, rotationY, roomCode, character, wantedLevel, missionIndex, activeOutfitId, activeWeaponId]);
   
   // Keyboard controls
   useEffect(() => {
