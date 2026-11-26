@@ -395,14 +395,19 @@ export function GameView() {
     const channelName = `our_city_room_${roomCode}`;
     const channel = supabase.channel(channelName);
 
-    const payload: RoomPlayerState = {
+        const payload: RoomPlayerState = {
       id: character,
       name: character === "mira" ? "Mira" : "Leo",
       character,
       position,
       rotationY,
+      wantedLevel,
+      activity: wantedLevel > 0 ? "wanted" : "walking",
+      missionIndex: activeMissionIdx,
+      activeOutfitId: outfit,
+      activeWeaponId: currentWeapon,
     };
-
+    
     void channel.send({
       type: "broadcast",
       event: "player_move",
