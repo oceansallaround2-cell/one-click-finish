@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canJoinRoom, normalizeRoomCode, parseRoomPlayer } from "./room";
+import { canJoinRoom, getCharacterDisplayName, normalizeRoomCode, parseRoomPlayer } from "./room";
 
 describe("two-player room rules", () => {
   it("allows a room to fill its first two seats, but never a third", () => {
@@ -22,7 +22,7 @@ describe("two-player room rules", () => {
   it("accepts finite player state and rejects malformed or unsafe packets", () => {
     const player = parseRoomPlayer({
       id: "peer-1",
-      name: "Mira",
+      name: "Sidrah",
       character: "mira",
       position: [1, 0.9, 3],
       rotationY: 0.4,
@@ -37,5 +37,14 @@ describe("two-player room rules", () => {
     expect(player?.wantedLevel).toBe(2);
     expect(parseRoomPlayer({ ...player, position: [Number.NaN, 0, 0] })).toBeNull();
     expect(parseRoomPlayer({ ...player, wantedLevel: 6 })).toBeNull();
+  });
+
+  it("uses Sidrah and Priyanshu as the character display names", () => {
+    expect(getCharacterDisplayName("mira")).toBe("Sidrah");
+    expect(getCharacterDisplayName("leo")).toBe("Priyanshu");
+
+    const basePacket = { id: "peer-2", position: [0, 0, 0], rotationY: 0 };
+    expect(parseRoomPlayer({ ...basePacket, character: "mira" })?.name).toBe("Sidrah");
+    expect(parseRoomPlayer({ ...basePacket, character: "leo" })?.name).toBe("Priyanshu");
   });
 });

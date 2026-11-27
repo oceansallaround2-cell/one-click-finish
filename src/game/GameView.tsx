@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { getCharacterDisplayName } from "./net/room";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -220,8 +221,8 @@ export function GameView() {
       hair: "#38251f",
       jacket: currentOutfit.leoColor,
       dress: "#991b1b",
-      shirt: currentOutfit.id === "glamour" ? "#f8fafc" : "#f5eee5",
-      jewelry: "#e8c46a",
+      shirt: currentOutfit.id === "glamour" ? "#f8fafc" : "#18181b",
+      jewelry: currentOutfit.id === "glamour" ? "#e8c46a" : "#c4c9d0",
       shoe: "#1f2937",
       eye: "#49332c",
     }),
@@ -367,7 +368,7 @@ export function GameView() {
       const newMsg: ChatMessage = {
         id: Math.random().toString(36).substring(2, 9),
         sender: character,
-        senderName: character === "mira" ? "Mira" : "Leo",
+        senderName: getCharacterDisplayName(character),
         text,
         timestamp: Date.now(),
       };
@@ -429,7 +430,7 @@ export function GameView() {
 
     const payload: RoomPlayerState = {
       id: character,
-      name: character === "mira" ? "Mira" : "Leo",
+      name: getCharacterDisplayName(character),
       character,
       position,
       rotationY,
@@ -722,7 +723,7 @@ export function GameView() {
               onClick={handleSwitchCharacter}
               className="w-13 h-13 rounded-full bg-slate-900/80 border border-white/20 text-white font-bold text-xs uppercase flex items-center justify-center backdrop-blur-md active:scale-95 shadow-lg"
             >
-              {character === "mira" ? "Leo" : "Mira"}
+              {character === "mira" ? "Priyanshu" : "Sidrah"}
             </button>
 
             <button

@@ -3,8 +3,13 @@ export const MAX_ROOM_PLAYERS = 2;
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
+// Keep these wire/save IDs stable so existing rooms and saved games still load.
 export type CharacterId = "mira" | "leo";
 export type PlayerActivity = "walking" | "wanted" | "shopping" | "mission";
+
+export function getCharacterDisplayName(character: CharacterId): string {
+  return character === "mira" ? "Sidrah" : "Priyanshu";
+}
 
 export type RoomPlayerState = {
   id: string;
@@ -91,7 +96,7 @@ export function parseRoomPlayer(value: unknown): RoomPlayerState | null {
 
   return {
     id,
-    name: typeof name === "string" ? name.slice(0, 32) : character === "mira" ? "Mira" : "Leo",
+    name: typeof name === "string" ? name.slice(0, 32) : getCharacterDisplayName(character),
     character,
     position: [position[0], position[1], position[2]],
     rotationY,

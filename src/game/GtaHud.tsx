@@ -45,7 +45,7 @@ export const OUTFIT_CATALOG: OutfitItem[] = [
     id: "sunset",
     name: "Classic Sunset",
     price: 0,
-    description: "Mira's iconic embroidered gown & Leo's tailored jacket",
+    description: "Sidrah's embroidered maroon gown & Priyanshu's black jacket",
     miraColor: "#991b1b",
     leoColor: "#22272e",
   },
